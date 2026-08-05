@@ -1,0 +1,22 @@
+{
+  "name": "leo-skills",
+  "owner": {
+    "name": "Leo Ijebor"
+  },
+  "description": "Leo's personal Claude Code plugins.",
+  "plugins": [
+    {
+      "name": "delegate",
+      "source": "./delegate",
+      "description": "Delegate coding, review, and refinement work to cheaper agents (Codex/Sol, Claude subagents) via a user-tunable capability matrix, keeping the frontier orchestrator's context light.",
+      "category": "engineering",
+      "keywords": [
+        "delegation",
+        "codex",
+        "cost-optimization",
+        "orchestration",
+        "code-review"
+      ]
+    }
+  ]
+}
