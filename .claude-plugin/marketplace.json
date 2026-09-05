@@ -8,7 +8,7 @@
     {
       "name": "delegate",
       "source": "./delegate",
-      "description": "Delegate coding, review, and refinement work to cheaper agents (Codex/Sol, Claude subagents) via a user-tunable capability matrix, keeping the frontier orchestrator's context light.",
+      "description": "Delegate coding, review, and refinement work to cheaper agents (Codex/Astra, Claude subagents) via a user-tunable capability matrix, keeping the frontier orchestrator's context light.",
       "category": "engineering",
       "keywords": [
         "delegation",

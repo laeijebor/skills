@@ -1,6 +1,6 @@
 {
   "name": "delegate",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Hand off coding, review, and refinement work to cheaper delegate agents — Codex models (spending ChatGPT quota) and Claude subagents — steered by a user-tunable capability matrix. The frontier orchestrator keeps only the judgment work: decomposition, routing, triage, and synthesis.",
   "author": {
     "name": "Leo Ijebor"

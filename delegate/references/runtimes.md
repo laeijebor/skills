@@ -2,26 +2,26 @@
 
 ## Codex runtime (`runtime: codex`)
 
-Non-interactive runs via `codex exec`. The user's `~/.codex/config.toml` already defaults
-to `gpt-5.6-sol` at high reasoning effort, so a bare `codex exec "<packet>"` is Sol-high.
+Non-interactive runs via `codex exec`. Default to `gpt-6-astra` at high reasoning effort;
+pin both explicitly rather than relying on the user's `~/.codex/config.toml`.
 
 Write-capable coding task (in the current worktree):
 
 ```bash
-codex exec --sandbox workspace-write -o /tmp/delegate-last-msg.md "<packet>"
+codex exec -m gpt-6-astra -c model_reasoning_effort="high" --sandbox workspace-write -o /tmp/delegate-last-msg.md "<packet>"
 ```
 
 Read-only review task:
 
 ```bash
-codex exec --sandbox read-only -o /tmp/delegate-review-msg.md "<packet>"
+codex exec -m gpt-6-astra -c model_reasoning_effort="high" --sandbox read-only -o /tmp/delegate-review-msg.md "<packet>"
 ```
 
 Flag reference:
 
 - `-m <model>` — override model (`gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.3-codex-spark`).
 - `-c model_reasoning_effort="low"` — effort override (`minimal|low|medium|high|xhigh`);
-  this is the cost dial for Sol without changing model.
+  this is the cost dial for Astra without changing model.
 - `-C <dir>` — run in another directory (an isolation worktree).
 - `-o <file>` — write the final message to a file; read that instead of scraping stdout.
   Use a unique file per parallel run.

@@ -23,7 +23,7 @@ Flow:
    review when the scope is genuinely empty. Any focus text in the arguments narrows what
    reviewers emphasize — preserve it verbatim in the packets.
 2. **Run two reviewer passes in parallel**, read-only sandbox, per the matrix (default
-   `gpt-5.6-sol` high effort for both; if the diff is dominated by UI/visual changes, add
+   `gpt-6-astra` high effort for both; if the diff is dominated by UI/visual changes, add
    or substitute a high visual-taste reviewer per the matrix):
    - **Defect pass** — bugs, correctness, security, error handling, test gaps. Grounding
      rules: every finding cites file:line with evidence, ordered by severity.
