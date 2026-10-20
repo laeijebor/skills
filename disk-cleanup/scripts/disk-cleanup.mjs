@@ -379,7 +379,7 @@ async function audit(opts) {
         flag('f', { ...describe, action: 'remove-worktree', deleteBranch: false, force: !clean, auto: false,
           group: clean && unpushed === 0 ? 'stale-nothing-to-lose' : 'stale-unsaved-work',
           title: `delete ${closed ? 'closed-PR' : 'abandoned'} worktree ${tilde(worktree.path)} (branch kept)`,
-          detail: [closed ? `PR #${latest.number} closed without merge` : `no PR, idle ${ago(state.lastActivity)}`,
+          detail: [closed ? `PR #${latest.number} closed without merge` : latest ? `PR #${latest.number} merged, but later commits are not; idle ${ago(state.lastActivity)}` : `no PR, idle ${ago(state.lastActivity)}`,
             clean ? 'clean' : `${state.dirty.length} uncommitted change(s) would be lost`,
             unpushed === null ? 'could not count unpushed commits' : unpushed ? `${unpushed} commit(s) not on any remote (kept on the local branch)` : 'all commits pushed'].join('; ') })
       }
