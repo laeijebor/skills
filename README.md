@@ -29,3 +29,19 @@ Prior art: OpenAI's codex plugin (CLI mechanics, verbatim-pipe philosophy) and
 BuilderIO's efficient-frontier/efficient-fable (handoff-packet orchestration discipline).
 This plugin combines the two and adds matrix-based routing, a verification gate
 (never trust reported green), and orchestrator-judged worktree isolation.
+
+## Skills
+
+### disk-cleanup
+
+Audit, then reclaim disk from git worktrees, `node_modules`, Docker, and idle
+tmux/Commando sessions. Merged, clean, idle worktrees are deleted, along with their
+branch and sessions. Ageing unmerged worktrees lose their `node_modules`. Docker
+build cache and unused images are pruned. Anything riskier is listed for approval.
+See `disk-cleanup/SKILL.md` for the rules.
+
+```bash
+ln -s "<absolute-path-to-this-repo>/disk-cleanup" ~/.claude/skills/disk-cleanup
+ln -s "<absolute-path-to-this-repo>/disk-cleanup" ~/.codex/skills/disk-cleanup
+ln -s "<absolute-path-to-this-repo>/disk-cleanup" ~/.config/opencode/skills/disk-cleanup
+```
