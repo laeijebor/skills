@@ -282,7 +282,7 @@ async function audit(opts) {
 
   for (const repo of repos) {
     const missing = repo.worktrees.filter((worktree) => worktree.prunable)
-    if (missing.length) add('g', { action: 'git-worktree-prune', auto: true, repo: repo.path, title: `git worktree prune in ${tilde(repo.path)}`, detail: `${missing.length} registered worktree(s) whose folder is gone` })
+    if (missing.length) add('g', { action: 'git-worktree-prune', group: 'housekeeping', auto: true, repo: repo.path, title: `git worktree prune in ${tilde(repo.path)}`, detail: `${missing.length} registered worktree(s) whose folder is gone` })
   }
 
   const inspected = await mapLimit(candidates, 8, async ({ repo, worktree }) => {
@@ -292,7 +292,6 @@ async function audit(opts) {
     return { repo, worktree, prs, state, merged }
   })
 
-  const sizeJobs = []
   for (const entry of inspected.filter(Boolean)) {
     const { repo, worktree, prs, state, merged } = entry
     const open = prs.find((pr) => pr.state === 'OPEN')
@@ -328,26 +327,25 @@ async function audit(opts) {
         ...(sharedSessions.length ? [`session(s) ${sharedSessions.map((session) => `"${session.name}"`).join(', ')} also use other folders`] : []),
       ]
       const item = { ...describe, action: 'remove-worktree', deleteBranch: Boolean(worktree.branch), force: false }
-      if (blockers.length) add('f', { ...item, auto: false, title: `delete merged worktree ${tilde(worktree.path)}`, detail: blockers.join('; ') })
-      else add('d', { ...item, auto: true, title: tilde(worktree.path) })
-      sizeJobs.push({ item: items.at(-1), paths: [worktree.path] })
+      if (blockers.length) add('f', { ...item, group: 'merged-in-use', auto: false, title: `delete merged worktree ${tilde(worktree.path)}`, detail: blockers.join('; ') })
+      else add('d', { ...item, group: 'merged', auto: true, title: tilde(worktree.path) })
       handled = true
     } else if (merged && !open && !recent) {
       add('f', { ...describe, action: 'remove-worktree', deleteBranch: Boolean(worktree.branch), force: true, auto: false,
+        group: state.dirty.every((file) => file.code === '??') ? 'merged-untracked-only' : 'merged-modified',
         title: `force-delete merged worktree ${tilde(worktree.path)}`,
         detail: `merged, but has uncommitted changes: ${state.dirty.slice(0, 5).map((file) => `${file.code.trim()} ${file.path}`).join(', ')}${state.dirty.length > 5 ? ', …' : ''}` })
-      sizeJobs.push({ item: items.at(-1), paths: [worktree.path] })
       handled = true
     } else if (!merged && !open && stale) {
       const closed = latest?.state === 'CLOSED'
       if (closed || state.lastActivity < abandonCutoff) {
         const unpushed = Number((await run('git', ['-C', repo.path, 'rev-list', '--count', worktree.head, '--not', '--remotes'])).stdout.trim()) || 0
         add('f', { ...describe, action: 'remove-worktree', deleteBranch: false, force: !clean, auto: false,
+          group: clean && !unpushed ? 'stale-nothing-to-lose' : 'stale-unsaved-work',
           title: `delete ${closed ? 'closed-PR' : 'abandoned'} worktree ${tilde(worktree.path)} (branch kept)`,
           detail: [closed ? `PR #${latest.number} closed without merge` : `no PR, idle ${ago(state.lastActivity)}`,
             clean ? 'clean' : `${state.dirty.length} uncommitted change(s) would be lost`,
             unpushed ? `${unpushed} commit(s) not on any remote (kept on the local branch)` : 'all commits pushed'].join('; ') })
-        sizeJobs.push({ item: items.at(-1), paths: [worktree.path] })
         handled = true
       }
     }
@@ -356,8 +354,7 @@ async function audit(opts) {
     if (!autoDelete && stale && !state.running.length) {
       const nodeModules = await findNodeModules(worktree.path)
       if (nodeModules.length) {
-        add('p', { ...describe, action: 'prune-node-modules', auto: true, title: tilde(worktree.path), nodeModules })
-        sizeJobs.push({ item: items.at(-1), paths: nodeModules })
+        add('p', { ...describe, group: 'ageing-node-modules', action: 'prune-node-modules', auto: true, title: tilde(worktree.path), nodeModules })
         handled = true
       }
     }
@@ -378,31 +375,36 @@ async function audit(opts) {
       const top = await run('git', ['-C', path, 'rev-parse', '--show-toplevel'])
       const isOwnRepo = top.code === 0 && top.stdout.trim() === path && existsSync(join(path, '.git')) && statSync(join(path, '.git')).isDirectory()
       if (top.code === 0 && top.stdout.trim() === path && !isOwnRepo) continue // a worktree of a repo outside the scan roots
-      add('f', { action: 'remove-dir', auto: false, path, lastActivity: mtime(path), title: `delete unregistered folder ${tilde(path)}`,
+      add('f', { action: 'remove-dir', group: 'unregistered-folders', auto: false, path, lastActivity: mtime(path), title: `delete unregistered folder ${tilde(path)}`,
         detail: isOwnRepo ? 'standalone git clone (not a worktree) — check for unpushed work first' : `not a registered git worktree; modified ${ago(mtime(path))} ago` })
-      sizeJobs.push({ item: items.at(-1), paths: [path] })
     }
   }
 
   // tmux sessions whose every pane points at a folder that no longer exists.
   for (const session of live.sessions.values()) {
     if (session.panes.every((pane) => !existsSync(pane.path)) && session.activity < activeCutoff) {
-      add('f', { action: 'kill-session', auto: false, sessions: [{ id: session.id, name: session.name, activity: session.activity, exclusive: true }], lastActivity: session.activity,
+      add('f', { action: 'kill-session', group: 'dead-sessions', auto: false, sessions: [{ id: session.id, name: session.name, activity: session.activity, exclusive: true }], lastActivity: session.activity,
         title: `kill session "${session.name}"`, detail: `every pane is in a deleted folder (${tilde(session.panes[0].path)}); idle ${ago(session.activity)}` })
     }
   }
 
   if (opts.docker) await auditDocker(opts, add)
   if (items.some((item) => item.auto && ['remove-worktree', 'prune-node-modules'].includes(item.action)) && (await run('pnpm', ['--version'])).code === 0) {
-    add('k', { action: 'pnpm-store-prune', auto: true, title: 'pnpm store prune', detail: 'after node_modules go, drop store packages no project references (runs last, only if something was removed)' })
+    add('k', { action: 'pnpm-store-prune', group: 'housekeeping', auto: true, title: 'pnpm store prune', detail: 'after node_modules go, drop store packages no project references (runs last, only if something was removed)' })
   }
 
-  if (opts.sizes && sizeJobs.length) {
-    log(`measuring ${sizeJobs.length} folders…`)
-    await mapLimit(sizeJobs, 8, async (job) => { job.item.sizeKB = await sizeKB(job.paths) })
+  // One du per group, so files hard-linked between worktrees (pnpm) are counted once.
+  const groupSizes = {}
+  if (opts.sizes) {
+    const groups = Object.groupBy(items, (item) => item.group)
+    log(`measuring ${Object.keys(groups).length} groups (slow on large trees)…`)
+    await mapLimit(Object.entries(groups), 4, async ([group, list]) => {
+      const paths = list.flatMap((item) => item.nodeModules ?? (item.action === 'remove-worktree' || item.action === 'remove-dir' ? [item.path] : []))
+      if (paths.length) groupSizes[group] = await sizeKB(paths)
+    })
   }
 
-  const plan = { version: 1, createdAt: startedAt, opts, freeKB: await diskFreeKB(), items, left }
+  const plan = { version: 1, createdAt: startedAt, opts, freeKB: await diskFreeKB(), groupSizes, items, left }
   mkdirSync(STATE_DIR, { recursive: true })
   const planPath = join(STATE_DIR, `plan-${new Date(startedAt).toISOString().replace(/[:.]/g, '-')}.json`)
   writeFileSync(planPath, JSON.stringify(plan, null, 2))
@@ -416,49 +418,63 @@ async function auditDocker(opts, add) {
   const df = (await run('docker', ['system', 'df', '--format', '{{json .}}'])).stdout.split('\n').filter(Boolean).map((line) => JSON.parse(line))
   const byType = Object.fromEntries(df.map((row) => [row.Type, row]))
   const until = `until=${opts.staleDays * 24}h`
-  add('k', { action: 'docker-cache', auto: true, title: `Docker build cache, unused images and networks older than ${opts.staleDays}d`,
+  add('k', { action: 'docker-cache', group: 'housekeeping', auto: true, title: `Docker build cache, unused images and networks older than ${opts.staleDays}d`,
     detail: `build cache ${byType['Build Cache']?.Size ?? '?'} (reclaimable ${byType['Build Cache']?.Reclaimable ?? '?'}), images reclaimable ${byType.Images?.Reclaimable ?? '?'}`,
     commands: [['builder', 'prune', '--all', '--force', '--filter', until], ['image', 'prune', '--all', '--force', '--filter', until], ['network', 'prune', '--force', '--filter', until]] })
 
   const stopped = (await run('docker', ['ps', '-a', '--filter', 'status=exited', '--filter', 'status=created', '--format', '{{json .}}'])).stdout.split('\n').filter(Boolean).map((line) => JSON.parse(line))
   if (stopped.length) {
-    add('f', { action: 'docker-rm', auto: false, ids: stopped.map((container) => container.ID), title: `remove ${stopped.length} stopped Docker container(s)`,
+    add('f', { action: 'docker-rm', group: 'docker-containers', auto: false, ids: stopped.map((container) => container.ID), title: `remove ${stopped.length} stopped Docker container(s)`,
       detail: stopped.slice(0, 8).map((container) => `${container.Names} (${container.Image}, ${container.Status})`).join('; ') + (stopped.length > 8 ? '; …' : '') + ' — their writable layers are lost; named volumes are kept' })
   }
   const volumes = (await run('docker', ['volume', 'ls', '-q', '-f', 'dangling=true'])).stdout.split('\n').filter(Boolean)
   if (volumes.length) {
     const named = volumes.filter((name) => !/^[0-9a-f]{64}$/.test(name))
-    add('f', { action: 'docker-volume-rm', auto: false, ids: volumes, title: `remove ${volumes.length} Docker volume(s) not used by any container`,
+    add('f', { action: 'docker-volume-rm', group: 'docker-volumes', auto: false, ids: volumes, title: `remove ${volumes.length} Docker volume(s) not used by any container`,
       detail: `${byType['Local Volumes']?.Reclaimable ?? '?'} reclaimable; ${named.length} named (may hold database data): ${named.slice(0, 8).join(', ')}${named.length > 8 ? ', …' : ''}` })
   }
 }
 
+const GROUPS = {
+  merged: 'AUTO · delete merged worktrees (+ local branch, + their idle tmux sessions)',
+  'ageing-node-modules': 'AUTO · prune node_modules from ageing worktrees',
+  housekeeping: 'AUTO · housekeeping',
+  'merged-untracked-only': 'merged, only untracked files would be lost → force-delete worktree + branch',
+  'merged-modified': 'merged, but tracked files modified → force-delete worktree + branch',
+  'merged-in-use': 'merged and clean, but in use → delete worktree + branch, kill session',
+  'stale-nothing-to-lose': 'unmerged and stale, clean, every commit on a remote → delete worktree, keep branch',
+  'stale-unsaved-work': 'unmerged and stale with uncommitted or unpushed work → delete worktree, keep branch',
+  'unregistered-folders': 'folders in *worktrees dirs that git does not know → delete folder',
+  'dead-sessions': 'tmux sessions whose folders are all gone → kill session',
+  'docker-containers': 'stopped Docker containers → docker rm',
+  'docker-volumes': 'Docker volumes not attached to any container → docker volume rm',
+}
+
 function report(plan, planPath) {
-  const lines = []
-  const group = (title, list, row) => {
-    if (!list.length) return
-    const total = list.reduce((sum, item) => sum + (item.sizeKB ?? 0), 0)
-    lines.push('', `${title} (${list.length}${total ? `, ~${human(total)}` : ''})`)
-    for (const item of list) lines.push(row(item))
+  const lines = [
+    `Disk cleanup audit — ${new Date(plan.createdAt).toLocaleString()} — ${human(plan.freeKB)} free`,
+    `plan: ${planPath}`,
+    `rules: delete = merged into origin + clean + no open PR + idle ≥${plan.opts.activeHours}h; prune node_modules = idle ≥${plan.opts.staleDays}d`,
+  ]
+  const groups = Object.groupBy(plan.items, (item) => item.group)
+  for (const [group, title] of Object.entries(GROUPS)) {
+    const list = groups[group]
+    if (!list) continue
+    const size = plan.groupSizes?.[group] ? `, ~${human(plan.groupSizes[group])}` : ''
+    lines.push('', list[0].auto ? `${title} (${list.length}${size})` : `NEEDS APPROVAL · ${group} (${list.length}${size}) — ${title}`)
+    for (const item of list) {
+      const note = item.auto ? item.facts ?? item.detail : [item.detail, item.facts].filter(Boolean).join(' · ')
+      lines.push(`  ${item.id.padEnd(5)} ${item.title}${note ? `  — ${note}` : ''}`)
+    }
   }
-  const size = (item) => (item.sizeKB != null ? human(item.sizeKB).padStart(7) : '       ')
-  lines.push(`Disk cleanup audit — ${new Date(plan.createdAt).toLocaleString()} — ${human(plan.freeKB)} free`, `plan: ${planPath}`)
-  lines.push(`rules: delete = merged into origin + clean + no open PR + idle ≥${plan.opts.activeHours}h; prune node_modules = idle ≥${plan.opts.staleDays}d`)
-  const auto = plan.items.filter((item) => item.auto)
-  group('AUTO · delete merged worktrees (+ local branch, + their idle tmux sessions)', auto.filter((item) => item.action === 'remove-worktree'),
-    (item) => `  ${item.id.padEnd(4)} ${size(item)}  ${item.title}  — ${item.facts}`)
-  group('AUTO · prune node_modules from ageing worktrees', auto.filter((item) => item.action === 'prune-node-modules'),
-    (item) => `  ${item.id.padEnd(4)} ${size(item)}  ${item.title}  — ${item.facts}`)
-  group('AUTO · housekeeping', auto.filter((item) => !['remove-worktree', 'prune-node-modules'].includes(item.action)),
-    (item) => `  ${item.id.padEnd(4)}          ${item.title}${item.detail ? `  — ${item.detail}` : ''}`)
-  group('NEEDS APPROVAL', plan.items.filter((item) => !item.auto),
-    (item) => `  ${item.id.padEnd(4)} ${size(item)}  ${item.title}\n                 ${item.detail}${item.facts ? `\n                 ${item.facts}` : ''}`)
   if (plan.left.length) {
     const reasons = {}
     for (const item of plan.left) reasons[item.why] = (reasons[item.why] ?? 0) + 1
     lines.push('', `LEFT ALONE (${plan.left.length}): ${Object.entries(reasons).map(([why, count]) => `${count} ${why}`).join(', ')}`)
   }
-  lines.push('', 'Sizes are du estimates; pnpm hard links/clones mean real savings can be lower. apply reports the actual change in free space.')
+  lines.push('', plan.opts.sizes
+    ? 'Sizes are du estimates (APFS clones still count in full); apply reports the real change in free space.'
+    : 'Sizes not measured (pass --sizes; slow). apply reports the real change in free space.')
   return lines.join('\n')
 }
 
@@ -571,12 +587,14 @@ const actions = {
 
 async function apply(opts) {
   if (!opts.plan) throw new Error('apply needs --plan FILE (printed by audit)')
-  if (!opts.auto && !opts.ids.length) throw new Error('apply needs --auto and/or --ids')
+  if (!opts.auto && !opts.ids.length && !opts.groups.length) throw new Error('apply needs --auto, --groups and/or --ids')
   const plan = JSON.parse(readFileSync(opts.plan, 'utf8'))
   if (Date.now() - plan.createdAt > PLAN_MAX_AGE) throw new Error('plan is more than 6h old; run audit again')
   const unknown = opts.ids.filter((id) => !plan.items.some((item) => item.id === id))
   if (unknown.length) throw new Error(`unknown item id(s): ${unknown.join(', ')}`)
-  const selected = plan.items.filter((item) => (opts.auto && item.auto) || opts.ids.includes(item.id))
+  const unknownGroups = opts.groups.filter((group) => !plan.items.some((item) => item.group === group))
+  if (unknownGroups.length) throw new Error(`unknown group(s): ${unknownGroups.join(', ')}`)
+  const selected = plan.items.filter((item) => (opts.auto && item.auto) || opts.ids.includes(item.id) || opts.groups.includes(item.group))
     .sort((a, b) => (a.action === 'pnpm-store-prune') - (b.action === 'pnpm-store-prune'))
 
   const freeBefore = await diskFreeKB()
@@ -608,7 +626,7 @@ async function apply(opts) {
 
 function parseArgs(argv) {
   const [command, ...rest] = argv
-  const opts = { command, roots: [], staleDays: 3, activeHours: 24, abandonDays: 14, fetch: true, docker: true, sizes: true, json: false, tmuxSocket: null, plan: null, auto: false, ids: [], dryRun: false }
+  const opts = { command, roots: [], staleDays: 3, activeHours: 24, abandonDays: 14, fetch: true, docker: true, sizes: false, json: false, tmuxSocket: null, plan: null, auto: false, ids: [], groups: [], dryRun: false }
   for (let i = 0; i < rest.length; i++) {
     const flag = rest[i]
     const value = () => { const next = rest[++i]; if (next === undefined) throw new Error(`${flag} needs a value`); return next }
@@ -621,10 +639,11 @@ function parseArgs(argv) {
       case '--tmux-socket': opts.tmuxSocket = value(); break
       case '--no-fetch': opts.fetch = false; break
       case '--no-docker': opts.docker = false; break
-      case '--no-sizes': opts.sizes = false; break
+      case '--sizes': opts.sizes = true; break
       case '--json': opts.json = true; break
       case '--plan': opts.plan = resolve(value()); break
       case '--auto': opts.auto = true; break
+      case '--groups': opts.groups.push(...value().split(',').map((group) => group.trim()).filter(Boolean)); break
       case '--ids': opts.ids.push(...value().split(',').map((id) => id.trim()).filter(Boolean)); break
       case '--dry-run': opts.dryRun = true; break
       default: throw new Error(`unknown argument: ${flag}`)
