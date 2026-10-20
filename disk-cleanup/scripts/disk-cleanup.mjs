@@ -153,6 +153,15 @@ function transcriptActivity(path) {
   return latest
 }
 
+// Time of the newest reflog entry. Not the file's mtime: gc and reflog expiry rewrite these files.
+function lastReflogTime(path) {
+  let text
+  try { text = readFileSync(path, 'utf8') } catch { return 0 }
+  const line = text.trimEnd().split('\n').pop() ?? ''
+  const seconds = Number(line.split('\t')[0].split(' ').at(-2))
+  return Number.isFinite(seconds) ? seconds * 1000 : 0
+}
+
 function parseStatus(text) {
   const entries = text.split('\0').filter(Boolean)
   const files = []
@@ -174,7 +183,7 @@ async function worktreeState(path, live) {
   const procs = live.procs.filter((proc) => proc.cwd && inside(proc.cwd, path) && proc.kind !== 'self')
   const sources = {
     commit: Number(head.stdout.trim()) * 1000 || 0,
-    checkout: gitDir ? mtime(join(gitDir, 'logs', 'HEAD')) : 0, // creation, commits, checkouts, resets
+    checkout: gitDir ? lastReflogTime(join(gitDir, 'logs', 'HEAD')) : 0, // creation, commits, checkouts, resets
     created: (() => { try { return statSync(path).birthtimeMs } catch { return 0 } })(),
     files: Math.max(0, ...(dirty ?? []).slice(0, 500).map((file) => mtime(join(path, file.path)))),
     tmux: Math.max(0, ...sessions.map((session) => session.activity)),
