@@ -25,7 +25,7 @@ Idle time is the latest of: HEAD commit time, mtimes of uncommitted files, tmux 
 2. **Report.** Give the user a short summary (counts per group, sizes if measured, plan path), not the full listing.
 3. **Apply the auto buckets straight away.** The user pre-approved them, so don't ask. Run `node <skill>/scripts/disk-cleanup.mjs apply --plan <plan> --auto`. Report what was applied, anything skipped with its reason, the change in free space, and the log path. The log holds restore commands for every removed worktree and branch.
 4. **Ask about the approval groups.** For each group, give the user its count, what is at stake, and two or three representative items. Ask which groups to apply, and which individual ids to add or exclude. Use the host's question tool with multi-select where it has one (at most four options per question). Never apply these without an explicit yes. If the full listing would help, publish it as a page rather than pasting hundreds of lines.
-5. **Apply approved items.** `apply --plan <plan> --groups stale-nothing-to-lose,dead-sessions --ids f12`. A plan expires after 6 hours; re-run the audit if it's older. To approve a group except a few items, pass the remaining ids with `--ids` rather than the whole group.
+5. **Apply approved items.** `apply --plan <plan> --groups stale-nothing-to-lose,dead-sessions --ids f12`. A plan expires after 2 hours; re-run the audit if it's older. To approve a group except a few items, pass the remaining ids with `--ids` rather than the whole group.
 6. **Summarise** the space freed, what's left, and anything skipped.
 
 Use `apply … --dry-run` to see exactly what would happen after re-validation without changing anything.

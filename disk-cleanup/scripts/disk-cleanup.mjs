@@ -15,7 +15,8 @@ import { basename, dirname, join, resolve, sep } from 'node:path'
 const HOME = homedir()
 const STATE_DIR = process.env.DISK_CLEANUP_STATE_DIR ?? join(HOME, '.local/state/disk-cleanup')
 const HOUR = 3_600_000, DAY = 24 * HOUR
-const PLAN_MAX_AGE = 6 * HOUR
+const PLAN_MAX_AGE = 2 * HOUR
+const LIVE_MAX_AGE = 30_000
 const SKIP_SCAN = new Set(['node_modules', 'Library', 'Pods', 'Applications', 'Movies', 'Music', 'Pictures', 'Downloads'])
 const SHELLS = new Set(['zsh', 'bash', 'sh', 'fish', 'login', 'tmux'])
 const AGENT_RE = /(^|[\s/])(claude\w*|codex|opencode|cursor-agent|muse)(\s|$)|@anthropic-ai\/claude-code|@openai\/codex/
@@ -77,14 +78,20 @@ async function sizeKB(paths) {
 
 // ---------- live state: tmux, processes, activity ----------
 
+// Panes of the audited tmux server. No server is fine; any other failure must stop us, since an
+// empty list would read as "no sessions are using anything".
 async function tmuxPanes(socket) {
-  const format = ['#{session_id}', '#{session_name}', '#{session_activity}', '#{pane_pid}', '#{pane_current_path}'].join('\t')
-  const { code, stdout } = await run('tmux', [...(socket ? ['-L', socket] : []), 'list-panes', '-a', '-F', format])
-  if (code) return []
-  return stdout.split('\n').filter(Boolean).map((line) => {
-    const [sessionId, sessionName, activity, pid, path] = line.split('\t')
-    return { sessionId, sessionName, activity: Number(activity) * 1000, pid: Number(pid), path }
+  const format = ['#{pid}', '#{session_id}', '#{session_name}', '#{session_activity}', '#{pane_pid}', '#{pane_current_path}'].join('\t')
+  const { code, stdout, stderr } = await run('tmux', [...(socket ? ['-L', socket] : []), 'list-panes', '-a', '-F', format])
+  if (code) {
+    if (/no server running|error connecting/i.test(stderr)) return { serverPid: null, panes: [] }
+    throw new Error(`tmux list-panes failed: ${stderr.trim()}`)
+  }
+  const panes = stdout.split('\n').filter(Boolean).map((line) => {
+    const [serverPid, sessionId, sessionName, activity, pid, path] = line.split('\t')
+    return { serverPid: Number(serverPid), sessionId, sessionName, activity: Number(activity) * 1000, pid: Number(pid), path }
   })
+  return { serverPid: panes[0]?.serverPid ?? null, panes }
 }
 
 async function processTable() {
@@ -104,7 +111,7 @@ async function processTable() {
 }
 
 async function liveState(socket) {
-  const [panes, procs] = await Promise.all([tmuxPanes(socket), processTable()])
+  const [{ serverPid, panes }, procs] = await Promise.all([tmuxPanes(socket), processTable()])
   const sessions = new Map()
   for (const pane of panes) {
     const session = sessions.get(pane.sessionId) ?? { id: pane.sessionId, name: pane.sessionName, activity: pane.activity, panes: [] }
@@ -117,19 +124,22 @@ async function liveState(socket) {
   for (const proc of procs.values()) {
     for (let pid = proc.pid, hops = 0; pid > 1 && hops < 64; pid = procs.get(pid)?.ppid ?? 0, hops++) {
       if (paneByPid.has(pid)) { proc.pane = paneByPid.get(pid); break }
-      if (/^tmux\b/.test(basename((procs.get(pid)?.args ?? '').split(' ')[0]))) { proc.tmuxHook = true; break } // run-shell / hook children of the server
+      if (pid === serverPid) { proc.tmuxHook = true; break } // run-shell / hook children of the audited server
     }
     const command = basename(proc.args.split(' ')[0]).replace(/^-/, '')
     proc.kind = self.has(proc.pid) ? 'self' : SHELLS.has(command) || command.startsWith('gitstatusd') ? 'shell' : AGENT_RE.test(proc.args) ? 'agent' : 'program'
   }
-  // Children of an agent (MCP servers, tool runs) belong to that agent's session.
+  // An agent's MCP servers belong to it. Anything it started through a shell (a dev server or
+  // watcher from its Bash tool) stays a 'program', so it still blocks pruning node_modules.
   for (const proc of procs.values()) {
     if (proc.kind !== 'program') continue
     for (let pid = proc.ppid, hops = 0; pid > 1 && hops < 64; pid = procs.get(pid)?.ppid ?? 0, hops++) {
-      if (procs.get(pid)?.kind === 'agent') { proc.kind = 'agent'; break }
+      const ancestor = procs.get(pid)
+      if (!ancestor || ancestor.kind === 'shell') break
+      if (ancestor.kind === 'agent') { proc.kind = 'agent'; break }
     }
   }
-  return { panes, sessions, procs: [...procs.values()] }
+  return { at: Date.now(), panes, sessions, procs: [...procs.values()] }
 }
 
 function transcriptActivity(path) {
@@ -159,10 +169,13 @@ async function worktreeState(path, live) {
   const status = await run('git', ['-C', path, 'status', '--porcelain=v1', '-z', '--untracked-files=normal'])
   const dirty = status.code === 0 ? parseStatus(status.stdout) : null
   const head = await run('git', ['-C', path, 'log', '-1', '--format=%ct'])
+  const gitDir = (await run('git', ['-C', path, 'rev-parse', '--absolute-git-dir'])).stdout.trim()
   const sessions = [...live.sessions.values()].filter((session) => session.panes.some((pane) => inside(pane.path, path)))
   const procs = live.procs.filter((proc) => proc.cwd && inside(proc.cwd, path) && proc.kind !== 'self')
   const sources = {
     commit: Number(head.stdout.trim()) * 1000 || 0,
+    checkout: gitDir ? mtime(join(gitDir, 'logs', 'HEAD')) : 0, // creation, commits, checkouts, resets
+    created: (() => { try { return statSync(path).birthtimeMs } catch { return 0 } })(),
     files: Math.max(0, ...(dirty ?? []).slice(0, 500).map((file) => mtime(join(path, file.path)))),
     tmux: Math.max(0, ...sessions.map((session) => session.activity)),
     chat: transcriptActivity(path),
@@ -234,7 +247,7 @@ async function loadRepo(path, opts) {
   const slug = origin.match(/github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/)?.[1]
   let prs = null
   if (slug) {
-    const list = await run('gh', ['pr', 'list', '-R', slug, '--state', 'all', '--limit', '1000', '--json', 'number,state,headRefName,headRefOid,url,updatedAt'])
+    const list = await run('gh', ['pr', 'list', '-R', slug, '--state', 'all', '--limit', '1000', '--json', 'number,state,headRefName,headRefOid,baseRefName,url,updatedAt'])
     if (list.code === 0) prs = JSON.parse(list.stdout)
     else log(`warn: gh pr list failed for ${slug}; merge detection falls back to git only`)
   }
@@ -245,16 +258,26 @@ async function loadRepo(path, opts) {
 async function mergedReason(repo, worktree, prs) {
   if (!repo.base || !worktree.head) return null
   if ((await run('git', ['-C', repo.path, 'merge-base', '--is-ancestor', worktree.head, repo.base])).code === 0) return `in ${repo.base}`
-  const pr = prs.find((candidate) => candidate.state === 'MERGED' && candidate.headRefOid === worktree.head)
+  const defaultBranch = repo.base.replace(/^origin\//, '')
+  const pr = prs.find((candidate) => candidate.state === 'MERGED' && candidate.headRefOid === worktree.head && candidate.baseRefName === defaultBranch)
   if (pr) return `PR #${pr.number} merged`
   const merge = await run('git', ['-C', repo.path, 'merge-tree', '--write-tree', '--no-messages', repo.base, worktree.head])
   if (merge.code === 0 && merge.stdout.trim().split('\n')[0] === repo.baseTree) return `changes already in ${repo.base}`
   return null
 }
 
-async function findNodeModules(path) {
+async function findNodeModules(path, nested) {
   const { stdout } = await run('find', [path, '(', '-name', '.git', '-o', '-name', 'Pods', ')', '-prune', '-o', '-name', 'node_modules', '-type', 'd', '-print', '-prune'], { timeout: 300_000 })
-  return stdout.split('\n').filter(Boolean)
+  return stdout.split('\n').filter((dir) => dir && !nested.some((inner) => inside(dir, inner)))
+}
+
+// Registered worktrees inside this one. `git worktree remove` deletes them with it, even when
+// they hold uncommitted work (e.g. Claude Code's .claude/worktrees, which is usually ignored).
+const nestedIn = (path, registered) => [...registered].filter((other) => other !== path && inside(other, path))
+
+async function registeredWorktrees(repoPaths) {
+  const lists = await Promise.all(repoPaths.map((repo) => run('git', ['-C', repo, 'worktree', 'list', '--porcelain'])))
+  return new Set(lists.flatMap((list) => parseWorktrees(list.stdout).map((worktree) => worktree.path)))
 }
 
 // ---------- audit ----------
@@ -313,53 +336,56 @@ async function audit(opts) {
 
     if (inside(here, worktree.path)) { left.push({ ...describe, why: 'this agent is running here' }); continue }
     if (worktree.locked) { left.push({ ...describe, why: 'locked' }); continue }
+    if (state.dirty === null) { left.push({ ...describe, why: 'git status failed' }); continue }
 
     const recent = state.lastActivity > activeCutoff
     const stale = state.lastActivity < staleCutoff
     const clean = state.dirty?.length === 0
     const sharedSessions = state.sessions.filter((session) => !session.exclusive)
-    let handled = false
+    const nested = nestedIn(worktree.path, registered)
+    let added = null
+    const flag = (prefix, item) => { add(prefix, item); added = items.at(-1) }
 
     if (merged && !open && clean) {
       const blockers = [
+        ...(nested.length ? [`contains ${nested.length} nested worktree(s), e.g. ${tilde(nested[0])} — remove those first`] : []),
+        ...(repo.slug && !repo.prs ? ['PR status unknown (gh failed)'] : []),
         ...(recent ? [`active ${ago(state.lastActivity)} ago`] : []),
         ...(state.external.length ? [`${state.external.length} process(es) outside tmux: ${state.external.map((proc) => proc.args.split(' ')[0]).join(', ')}`] : []),
         ...(sharedSessions.length ? [`session(s) ${sharedSessions.map((session) => `"${session.name}"`).join(', ')} also use other folders`] : []),
       ]
       const item = { ...describe, action: 'remove-worktree', deleteBranch: Boolean(worktree.branch), force: false }
-      if (blockers.length) add('f', { ...item, group: 'merged-in-use', auto: false, title: `delete merged worktree ${tilde(worktree.path)}`, detail: blockers.join('; ') })
-      else add('d', { ...item, group: 'merged', auto: true, title: tilde(worktree.path) })
-      handled = true
-    } else if (merged && !open && !recent) {
-      add('f', { ...describe, action: 'remove-worktree', deleteBranch: Boolean(worktree.branch), force: true, auto: false,
+      if (blockers.length) flag('f', { ...item, group: 'merged-in-use', auto: false, title: `delete merged worktree ${tilde(worktree.path)}`, detail: blockers.join('; ') })
+      else flag('d', { ...item, group: 'merged', auto: true, title: tilde(worktree.path) })
+    } else if (merged && !open && !recent && !nested.length) {
+      flag('f', { ...describe, action: 'remove-worktree', deleteBranch: Boolean(worktree.branch), force: true, auto: false,
         group: state.dirty.every((file) => file.code === '??') ? 'merged-untracked-only' : 'merged-modified',
         title: `force-delete merged worktree ${tilde(worktree.path)}`,
         detail: `merged, but has uncommitted changes: ${state.dirty.slice(0, 5).map((file) => `${file.code.trim()} ${file.path}`).join(', ')}${state.dirty.length > 5 ? ', …' : ''}` })
-      handled = true
-    } else if (!merged && !open && stale) {
+    } else if (!merged && !open && stale && !nested.length) {
       const closed = latest?.state === 'CLOSED'
       if (closed || state.lastActivity < abandonCutoff) {
-        const unpushed = Number((await run('git', ['-C', repo.path, 'rev-list', '--count', worktree.head, '--not', '--remotes'])).stdout.trim()) || 0
-        add('f', { ...describe, action: 'remove-worktree', deleteBranch: false, force: !clean, auto: false,
-          group: clean && !unpushed ? 'stale-nothing-to-lose' : 'stale-unsaved-work',
+        const count = await run('git', ['-C', repo.path, 'rev-list', '--count', worktree.head, '--not', '--remotes'])
+        const unpushed = count.code === 0 ? Number(count.stdout.trim()) : null
+        flag('f', { ...describe, action: 'remove-worktree', deleteBranch: false, force: !clean, auto: false,
+          group: clean && unpushed === 0 ? 'stale-nothing-to-lose' : 'stale-unsaved-work',
           title: `delete ${closed ? 'closed-PR' : 'abandoned'} worktree ${tilde(worktree.path)} (branch kept)`,
           detail: [closed ? `PR #${latest.number} closed without merge` : `no PR, idle ${ago(state.lastActivity)}`,
             clean ? 'clean' : `${state.dirty.length} uncommitted change(s) would be lost`,
-            unpushed ? `${unpushed} commit(s) not on any remote (kept on the local branch)` : 'all commits pushed'].join('; ') })
-        handled = true
+            unpushed === null ? 'could not count unpushed commits' : unpushed ? `${unpushed} commit(s) not on any remote (kept on the local branch)` : 'all commits pushed'].join('; ') })
       }
     }
 
-    const autoDelete = items.at(-1)?.path === worktree.path && items.at(-1).auto
-    if (!autoDelete && stale && !state.running.length) {
-      const nodeModules = await findNodeModules(worktree.path)
+    let pruned = false
+    if (!added?.auto && stale && !state.running.length) {
+      const nodeModules = await findNodeModules(worktree.path, nested)
       if (nodeModules.length) {
         add('p', { ...describe, group: 'ageing-node-modules', action: 'prune-node-modules', auto: true, title: tilde(worktree.path), nodeModules })
-        handled = true
+        pruned = true
       }
     }
-    if (!handled) {
-      left.push({ ...describe, why: recent ? 'active recently' : !stale ? `ageing (<${opts.staleDays}d)` : state.running.length ? `process running: ${state.running[0].args.split(' ')[0]}` : open ? 'open PR, nothing to prune' : 'nothing to prune' })
+    if (!added && !pruned) {
+      left.push({ ...describe, why: nested.length ? 'contains nested worktrees' : recent ? 'active recently' : !stale ? `ageing (<${opts.staleDays}d)` : state.running.length ? `process running: ${state.running[0].args.split(' ')[0]}` : open ? 'open PR, nothing to prune' : 'nothing to prune' })
     }
   }
 
@@ -404,7 +430,7 @@ async function audit(opts) {
     })
   }
 
-  const plan = { version: 1, createdAt: startedAt, opts, freeKB: await diskFreeKB(), groupSizes, items, left }
+  const plan = { version: 1, createdAt: startedAt, opts, repos: repoPaths, freeKB: await diskFreeKB(), groupSizes, items, left }
   mkdirSync(STATE_DIR, { recursive: true })
   const planPath = join(STATE_DIR, `plan-${new Date(startedAt).toISOString().replace(/[:.]/g, '-')}.json`)
   writeFileSync(planPath, JSON.stringify(plan, null, 2))
@@ -507,10 +533,13 @@ const actions = {
     const current = parseWorktrees((await run('git', ['-C', item.repo, 'worktree', 'list', '--porcelain'])).stdout).find((worktree) => worktree.path === item.path)
     if (!current) throw new Error('no longer a registered worktree')
     if (current.head !== item.head || (current.branch ?? null) !== item.branch) throw new Error(`HEAD/branch moved since audit (${current.branch ?? 'detached'} @ ${current.head.slice(0, 8)})`)
+    const nested = nestedIn(item.path, await registeredWorktrees(ctx.plan.repos))
+    if (nested.length) throw new Error(`contains nested worktree ${tilde(nested[0])}`)
     const state = await worktreeState(item.path, ctx.live)
     if (state.lastActivity > item.lastActivity + 60_000) throw new Error(`new activity since audit (${ago(state.lastActivity)} ago)`)
     if (!item.force && state.dirty?.length !== 0) throw new Error('worktree is no longer clean')
     if (item.auto && state.external.length) throw new Error(`process now running outside tmux: ${state.external[0].args}`)
+    if (item.auto && state.sessions.some((session) => !session.exclusive)) throw new Error('a session in it now also uses other folders')
     if (ctx.dryRun) return `would remove${item.deleteBranch ? ` and delete branch ${item.branch}` : ''}${item.sessions?.length ? `, kill ${item.sessions.map((session) => `"${session.name}"`).join(', ')}` : ''}`
     const removed = await run('git', ['-C', item.repo, 'worktree', 'remove', ...(item.force ? ['--force'] : []), item.path], { timeout: 600_000 })
     if (removed.code) throw new Error(removed.stderr.trim())
@@ -575,13 +604,15 @@ const actions = {
   async 'docker-rm'(item, ctx) {
     if (ctx.dryRun) return `would remove ${item.ids.length} container(s)`
     const result = await run('docker', ['rm', ...item.ids])
-    return result.code ? `partial: ${result.stderr.trim().split('\n')[0]}` : `removed ${item.ids.length} container(s)`
+    if (result.code) throw new Error(`partly failed: ${result.stderr.trim().split('\n')[0]}`)
+    return `removed ${item.ids.length} container(s)`
   },
 
   async 'docker-volume-rm'(item, ctx) {
     if (ctx.dryRun) return `would remove ${item.ids.length} volume(s)`
     const result = await run('docker', ['volume', 'rm', ...item.ids])
-    return result.code ? `partial: ${result.stderr.trim().split('\n')[0]}` : `removed ${item.ids.length} volume(s)`
+    if (result.code) throw new Error(`partly failed: ${result.stderr.trim().split('\n')[0]}`)
+    return `removed ${item.ids.length} volume(s)`
   },
 }
 
@@ -589,7 +620,7 @@ async function apply(opts) {
   if (!opts.plan) throw new Error('apply needs --plan FILE (printed by audit)')
   if (!opts.auto && !opts.ids.length && !opts.groups.length) throw new Error('apply needs --auto, --groups and/or --ids')
   const plan = JSON.parse(readFileSync(opts.plan, 'utf8'))
-  if (Date.now() - plan.createdAt > PLAN_MAX_AGE) throw new Error('plan is more than 6h old; run audit again')
+  if (Date.now() - plan.createdAt > PLAN_MAX_AGE) throw new Error('plan is more than 2h old; run audit again')
   const unknown = opts.ids.filter((id) => !plan.items.some((item) => item.id === id))
   if (unknown.length) throw new Error(`unknown item id(s): ${unknown.join(', ')}`)
   const unknownGroups = opts.groups.filter((group) => !plan.items.some((item) => item.group === group))
@@ -603,6 +634,7 @@ async function apply(opts) {
   for (const item of selected) {
     process.stderr.write(`${item.id.padEnd(4)} ${item.title} … `)
     try {
+      if (Date.now() - ctx.live.at > LIVE_MAX_AGE) ctx.live = await liveState(ctx.socket)
       const note = await actions[item.action](item, ctx)
       results.push({ id: item.id, ok: true, note }); log(note)
     } catch (error) {
