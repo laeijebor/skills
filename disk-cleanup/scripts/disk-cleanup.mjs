@@ -54,12 +54,14 @@ function ago(ms) {
   return `${Math.round(diff / DAY)}d`
 }
 
+// Decimal units, matching Finder and Docker.
 function human(kb) {
   if (kb == null) return '?'
   const units = ['KB', 'MB', 'GB', 'TB']
-  let value = kb, unit = 0
-  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++ }
-  return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`
+  const sign = kb < 0 ? '-' : ''
+  let value = Math.abs(kb) * 1.024, unit = 0
+  while (value >= 1000 && unit < units.length - 1) { value /= 1000; unit++ }
+  return `${sign}${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`
 }
 
 function mtime(path) { try { return lstatSync(path).mtimeMs } catch { return 0 } }
