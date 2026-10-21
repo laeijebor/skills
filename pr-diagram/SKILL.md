@@ -1,6 +1,6 @@
 ---
 name: pr-diagram
-description: Draw a code change as an animated PR Lens architecture or data-flow diagram and put it in the pull request description. Use when writing or updating a PR description for a change whose structure is worth seeing (components, boundaries, a request path, a sequence), or when asked to diagram or visualise a change. Uses the coding agent's own model; no API key, no GitHub App, no CI.
+description: Draw a code change as an animated PR Lens architecture or data-flow diagram and put it in the pull request description. Use when writing or updating a PR description for a change whose structure is worth seeing (components, boundaries, a request path, a sequence, call sites moved onto a shared piece), or when asked to diagram or visualise a change. Uses the coding agent's own model; no API key, no GitHub App, no CI.
 ---
 
 # PR diagram
@@ -28,10 +28,14 @@ Draw when a reviewer would otherwise rebuild a picture in their head:
 - a path is added, removed or rerouted (a request, a job, an event)
 - a sequence matters (who calls whom, in what order)
 - a boundary moves (client and server, process, package, service)
+- several call sites move onto one shared helper, type or list (draw the fan-in)
 
 Skip it, and use `show-me` (call tree, file tree, shape diff) instead, for:
 copy, docs, config, tests only, a rename, or a fix inside one function. A diagram
 of one box is noise.
+
+The diagram is the PR's illustration. Add a `show-me` sketch next to it only
+when the sketch says something the diagram can't, such as a type's shape.
 
 ## 1. Load the manual, once per session
 
@@ -43,9 +47,10 @@ npx -y @coldtea/pr-lens-cli@0.13.2 skill references   # every field, plus a full
 Read the example document in `skill references` before writing your first one.
 Follow the manual on *what goes in the document*: unchanged neighbours for
 blast radius, lanes as the reader's mental model, one hero edge, a flow only
-when there is a sequence, file refs on nodes, and a walkthrough. **This skill
-overrides the manual on where things go**: ignore its "Attach" and canvas
-steps and follow steps 4 and 5 below.
+when there is a sequence. **This skill overrides the manual on everything
+about where the diagram goes.** Ignore its "Attach" and canvas steps, its
+"render light by default", its `<picture>` theme pairs and its `comment`
+command. Follow steps 4 to 6 below instead.
 
 ## 2. Keep the repository clean
 
@@ -59,45 +64,85 @@ EXCLUDE="$(git rev-parse --git-common-dir)/info/exclude"
 grep -qxF '.pr-lens/' "$EXCLUDE" 2>/dev/null || echo '.pr-lens/' >> "$EXCLUDE"
 ```
 
-Check `git status --short` afterwards. Never commit anything under `.pr-lens/`.
+In a linked worktree this writes the main clone's exclude file, so it covers
+every worktree of the repository. That is intended. Check `git status --short`
+afterwards. Never commit anything under `.pr-lens/`. The CLI also drops a
+`.pr-lens/README.md` there; leave it.
 
-## 3. Write, validate, render
+## 3. Write the document
 
-1. Read the diff against the merge base, not the tip of the base branch:
+This is the SVG path, not the canvas path. The SVG draws lanes, nodes (label,
+subtitle, kind icon, delta badge), edges (label, hero, animation) and flow
+steps. It does **not** draw node summaries, file refs, stats, walkthroughs,
+flow `note`s or `payload`s. Leave out walkthroughs, notes and payloads; they
+cost time and nobody sees them. The document `summary` and view titles only
+become the image's hidden accessible text.
+
+1. Read the existing PR description, commit messages and linked issue first.
+   They often state the behaviour (an error code, the bug) more exactly than
+   the diff does.
+2. Read the diff against the merge base, not the tip of the base branch:
    `git diff --find-renames "$(git merge-base origin/<base> HEAD)"...HEAD`.
-2. Write `.pr-lens/graph.json`. Fill `provenance` from git (repository
-   owner and name, the real base and head SHAs). Never invent them.
-3. Validate, and fix every failure until it passes. Never delete the element
+   Then read enough surrounding code to know the unchanged neighbours.
+3. Write `.pr-lens/graph.json`. Fill `provenance` yourself from git: the
+   repository owner and name, `base.sha` as the **merge-base** SHA and
+   `head.sha` as `HEAD`. Leave `pullRequest` out. Never invent SHAs.
+4. Keep it readable. Aim for 6 to 12 nodes in the top view; past about 15 the
+   edges tangle. Cards cut text with "…": keep node labels under about 28
+   characters, and subtitles and lane subtitles under about 30.
+
+## 4. Validate, render, look
+
+1. Validate, and fix every failure until it passes. Never delete the element
    a failure names just to make it pass:
 
    ```bash
    npx -y @coldtea/pr-lens-cli@0.13.2 validate .pr-lens/graph.json
    ```
 
-4. Render the single neutral theme. It has its own dark background, so one
+2. Render the single neutral theme. It has its own dark background, so one
    image reads well in both GitHub's light and dark modes:
 
    ```bash
    npx -y @coldtea/pr-lens-cli@0.13.2 render .pr-lens/graph.json --theme neutral
    ```
 
-   It prints the drawing's folder, `.pr-lens/<title-slug>/`. Its
-   `manifest.json` lists every SVG with its `lens`, `view` and `path`. If the
-   render warns that a correction in `.github/pr-lens.yml` matched nothing,
-   fix that file rather than ignoring the warning.
+   It prints `✓ .pr-lens/<slug>/manifest.json — N SVGs across N diagrams`. The
+   drawing folder is `.pr-lens/<slug>/`. Each manifest asset's `path` is a bare
+   file name inside that folder. If the render warns that a correction in
+   `.github/pr-lens.yml` matched nothing, fix that file rather than ignoring it.
 
-## 4. Put it in the PR description
+3. Look at every image you will attach before attaching it. On macOS, take a
+   full-size screenshot with headless Chrome (QuickLook crops to a square), at
+   the asset's `width` and `height` from the manifest, then view the PNG:
 
-Pick at most two images: the top architecture view (the view with
-`defaultOpen: true`, usually `overview`), plus one data-flow view when the
-change has a sequence worth following. Use more only for a large feature or
-refactor where each extra image explains something new.
+   ```bash
+   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
+     --hide-scrollbars --window-size=<width>,<height> \
+     --screenshot=/tmp/<view>.png "file://$PWD/.pr-lens/<slug>/<file>.svg"
+   ```
 
-Reference each one as a Markdown image whose path is exactly the path you pass
-to `--attach`. `gh` uploads the file and rewrites that reference to the
-uploaded asset, keeping your alt text. An HTML `<img>` or `<picture>` is not
-rewritten, so use `![alt](path)` only. The alt text is the caption for readers
-without images: one line on what the diagram shows.
+   Otherwise open the SVG in any browser. Fix cut-off labels, tangles and
+   wrong names in `graph.json`, then validate and render again.
+
+## 5. Put it in the PR description
+
+Pick at most two images:
+
+- the top architecture view: the view in `graph.json` with
+  `defaultOpen: true` (usually `overview`), matched to the manifest asset
+  with that `view`
+- one data-flow view, only when the change has a sequence worth following
+
+Use more only for a large feature or refactor where each extra image explains
+something new.
+
+Reference each image as a Markdown image. The path is
+`.pr-lens/<slug>/<file>.svg`, written exactly the same in the body and in
+`--attach`. `gh` uploads the file and rewrites that reference to the uploaded
+asset, keeping your alt text. An HTML `<img>` or `<picture>` is not rewritten,
+so use `![alt](path)` only. The alt text is the caption for readers without
+images: one line on what the diagram shows.
 
 ```markdown
 Moves bulk sends off the per-recipient trigger onto a batch endpoint.
@@ -110,21 +155,24 @@ gh pr create --title "…" --body-file .pr-lens/body.md \
   --attach .pr-lens/batch-sends/overview-neutral-859426a4.svg
 ```
 
-On an existing PR, `gh pr edit <number> --body-file .pr-lens/body.md --attach <svg>`
-replaces the description. Start the body from the current one
-(`gh pr view <number> --json body --jq .body`) so its Commando marker and
-anything else already there survive.
+On an existing PR, start the body from the current one
+(`gh pr view <number> --json body --jq .body`), so its Commando marker and
+anything else already there survive. Then run
+`gh pr edit <number> --body-file .pr-lens/body.md --attach <svg>`, which
+replaces the description.
 
 `--attach` needs GitHub CLI 2.99 or newer (`gh --version`). On an older `gh`,
 or a forge other than GitHub, leave the diagram out and use `show-me`.
 
-## 5. Order the description
+## 6. Order the description
 
 1. One sentence on why the change exists.
 2. The diagram(s).
 3. Proof that it works: tests, a screenshot, a recording.
 4. A "Where to look" section, as the PR rules require.
-5. The Commando pane marker, when the pane provides one.
+5. The Commando pane marker. When creating a PR from a Commando pane, get it
+   from `node "$HOME/.commando/hooks/commando-pr-marker.mjs"` (see the
+   `commando-prs` skill). When editing, keep the one already there.
 
 When a later push changes the structure, re-render and replace the image with
 `gh pr edit`. Skip the re-render for pushes that don't change what the diagram
