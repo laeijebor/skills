@@ -88,8 +88,9 @@ become the image's hidden accessible text.
    repository owner and name, `base.sha` as the **merge-base** SHA and
    `head.sha` as `HEAD`. Leave `pullRequest` out. Never invent SHAs.
 4. Keep it readable. Aim for 6 to 12 nodes in the top view; past about 15 the
-   edges tangle. Cards cut text with "…": keep node labels under about 28
-   characters, and subtitles and lane subtitles under about 30.
+   edges tangle. Cards cut text with "…". A card alone on its row fits about
+   45 characters of subtitle; two cards sharing a row fit only about 18 each.
+   Keep labels and subtitles short, and check the screenshot in step 4.
 
 ## 4. Validate, render, look
 
