@@ -44,6 +44,7 @@ uploads it into the description. Nothing is sent to prlens.dev. See
 ```bash
 ln -s "<absolute-path-to-this-repo>/pr-diagram" ~/.claude/skills/pr-diagram
 ln -s "<absolute-path-to-this-repo>/pr-diagram" ~/.codex/skills/pr-diagram
+ln -s "<absolute-path-to-this-repo>/pr-diagram" ~/.config/opencode/skills/pr-diagram
 ```
 
 Needs Node 20.11+ and GitHub CLI 2.99+.
