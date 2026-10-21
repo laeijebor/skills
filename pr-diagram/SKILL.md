@@ -16,9 +16,8 @@ Always run the pinned CLI version, spelled out in every command:
 npx -y @coldtea/pr-lens-cli@0.13.2 <command>
 ```
 
-Its manual says `@latest`. Substitute `@0.13.2`. The schema version a document
-declares must match the CLI, so a floating version breaks documents that passed
-yesterday. Bump the pin on purpose, after reading the release notes.
+Its manual says `@latest`; substitute `@0.13.2`, because a document's schema
+version must match the CLI. Bump the pin on purpose, after reading the release notes.
 
 ## Draw it, or use show-me?
 
@@ -61,28 +60,28 @@ git's local exclude file first. The CLI then sees it is ignored and leaves
 
 ```bash
 EXCLUDE="$(git rev-parse --git-common-dir)/info/exclude"
+mkdir -p "$(dirname "$EXCLUDE")"
 grep -qxF '.pr-lens/' "$EXCLUDE" 2>/dev/null || echo '.pr-lens/' >> "$EXCLUDE"
 ```
 
 In a linked worktree this writes the main clone's exclude file, so it covers
-every worktree of the repository. That is intended. Check `git status --short`
-afterwards. Never commit anything under `.pr-lens/`. The CLI also drops a
+every worktree of the repository. That is intended. The CLI also drops a
 `.pr-lens/README.md` there; leave it.
 
 ## 3. Write the document
 
 This is the SVG path, not the canvas path. The SVG draws lanes, nodes (label,
-subtitle, kind icon, delta badge), edges (label, hero, animation) and flow
-steps. It does **not** draw node summaries, file refs, stats, walkthroughs,
-flow `note`s or `payload`s. Leave out walkthroughs, notes and payloads; they
-cost time and nobody sees them. The document `summary` and view titles only
-become the image's hidden accessible text.
+subtitle, kind icon, delta badge, `badges`), edges (label, hero, animation)
+and flow steps. Leave out everything it does not draw, even where the manual
+asks for it: node `summary`, `files`, `stats`, the walkthrough, flow `note`s
+and `payload`s. They cost time and nobody sees them. A view's `summary` (or
+the document's) only becomes the image's hidden accessible description.
 
 1. Read the existing PR description, commit messages and linked issue first.
    They often state the behaviour (an error code, the bug) more exactly than
    the diff does.
 2. Read the diff against the merge base, not the tip of the base branch:
-   `git diff --find-renames "$(git merge-base origin/<base> HEAD)"...HEAD`.
+   `git diff --find-renames origin/<base>...HEAD` (three dots diff from the merge base).
    Then read enough surrounding code to know the unchanged neighbours.
 3. Write `.pr-lens/graph.json`. Fill `provenance` yourself from git: the
    repository owner and name, `base.sha` as the **merge-base** SHA and
@@ -112,6 +111,7 @@ become the image's hidden accessible text.
    drawing folder is `.pr-lens/<slug>/`. Each manifest asset's `path` is a bare
    file name inside that folder. If the render warns that a correction in
    `.github/pr-lens.yml` matched nothing, fix that file rather than ignoring it.
+   Then `git status --short` must not list `.gitignore`.
 
 3. Look at every image you will attach before attaching it. On macOS, take a
    full-size screenshot with headless Chrome (QuickLook crops to a square), at
@@ -133,7 +133,8 @@ Pick at most two images:
 - the top architecture view: the view in `graph.json` with
   `defaultOpen: true` (usually `overview`), matched to the manifest asset
   with that `view`
-- one data-flow view, only when the change has a sequence worth following
+- one data-flow view (an asset with `lens: "data-flow"`), only when the change
+  has a sequence worth following
 
 Use more only for a large feature or refactor where each extra image explains
 something new.
@@ -148,19 +149,32 @@ images: one line on what the diagram shows.
 ```markdown
 Moves bulk sends off the per-recipient trigger onto a batch endpoint.
 
-![Architecture after this change: the queue route, the new bulk sender and the removed per-recipient path](.pr-lens/batch-sends/overview-neutral-859426a4.svg)
+![Architecture after this change: the queue route, the new bulk sender and the removed per-recipient path](.pr-lens/batch-sends/overview-neutral-859426a4e41124c75b5fb3242fa881ad.svg)
 ```
 
 ```bash
 gh pr create --title "…" --body-file .pr-lens/body.md \
-  --attach .pr-lens/batch-sends/overview-neutral-859426a4.svg
+  --attach .pr-lens/batch-sends/overview-neutral-859426a4e41124c75b5fb3242fa881ad.svg
 ```
+
+Copy each file name from the manifest's `path`; the hash changes on every render.
+
+If `gh pr create` exits non-zero but prints a PR URL, the PR exists and an
+upload failed, leaving a broken `.pr-lens/…` image in the body. Don't run
+`create` again. Repair it with
+`gh pr edit <number> --body-file .pr-lens/body.md --attach <svg>`.
 
 On an existing PR, start the body from the current one
 (`gh pr view <number> --json body --jq .body`), so its Commando marker and
-anything else already there survive. Then run
-`gh pr edit <number> --body-file .pr-lens/body.md --attach <svg>`, which
-replaces the description.
+anything else already there survive. An earlier diagram is now an
+`![…](https://github.com/user-attachments/…)` line: replace that line with
+the new `.pr-lens/<slug>/<file>.svg` reference rather than adding a second
+image. Then run `gh pr edit <number> --body-file .pr-lens/body.md --attach <svg>`,
+which replaces the description.
+
+No PR yet, and none being opened? Stop after step 4. Give the user the SVG path
+and the PNG preview, and offer the interactive canvas only as an opt-in (see
+the hard rules).
 
 `--attach` needs GitHub CLI 2.99 or newer (`gh --version`). On an older `gh`,
 or a forge other than GitHub, leave the diagram out and use `show-me`.
@@ -175,8 +189,8 @@ or a forge other than GitHub, leave the diagram out and use `show-me`.
    from `node "$HOME/.commando/hooks/commando-pr-marker.mjs"` (see the
    `commando-prs` skill). When editing, keep the one already there.
 
-When a later push changes the structure, re-render and replace the image with
-`gh pr edit`. Skip the re-render for pushes that don't change what the diagram
+When a later push changes the structure, re-render and replace the image as
+described in step 5. Skip the re-render for pushes that don't change what the diagram
 shows.
 
 ## Hard rules
