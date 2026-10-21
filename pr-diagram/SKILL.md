@@ -176,6 +176,12 @@ No PR yet, and none being opened? Stop after step 4. Give the user the SVG path
 and the PNG preview, and offer the interactive canvas only as an opt-in (see
 the hard rules).
 
+In a Commando chat (your instructions say "This is a Commando chat"), also show the diagram in your
+reply, with or without a PR: a Markdown image with the SVG's absolute path,
+`![alt](/abs/path/.pr-lens/<slug>/<file>.svg)`. The chat draws it inline,
+animated. A path in plain text or backticks is not drawn. In a terminal, give
+the path as text.
+
 `--attach` needs GitHub CLI 2.99 or newer (`gh --version`). On an older `gh`,
 or a forge other than GitHub, leave the diagram out and use `show-me`.
 
