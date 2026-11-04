@@ -21,7 +21,7 @@ function scene() {
   };
   const body = element('body', [0, 0, 1280, 720]);
   const slide = body.append(element('section', [0, 0, 1280, 720], { backgroundColor: 'rgb(0, 0, 0)', overflowX: 'hidden', overflowY: 'hidden' }));
-  const inspect = () => runInNewContext(`(${inspectSlide.toString()})(0, 14)`, { document: { body, querySelectorAll: () => [slide] }, getComputedStyle: node => node.style, Node: { TEXT_NODE: 3 } });
+  const inspect = () => runInNewContext(`(${inspectSlide.toString()})({ index: 0, minimumText: 14 })`, { document: { body, querySelectorAll: () => [slide] }, getComputedStyle: node => node.style, Node: { TEXT_NODE: 3 } });
   return { element, slide, inspect };
 }
 

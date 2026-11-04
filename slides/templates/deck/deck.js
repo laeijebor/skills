@@ -1,12 +1,16 @@
 // Deck format v1. No service, build step or network required.
 (() => {
   const params = new URLSearchParams(location.search);
-  const scriptBase = document.currentScript?.src || location.href;
   const theme = params.get('theme');
   const themeLink = document.getElementById('theme');
-  const bundledThemes = JSON.parse(document.getElementById('deck-themes')?.textContent || '{}');
+  const bundled = document.getElementById('deck-themes');
   if (themeLink && theme && /^[a-z0-9-]{1,40}$/.test(theme)) {
-    themeLink.href = bundledThemes[theme] || new URL(`themes/${theme}.css`, scriptBase).href;
+    try {
+      if (bundled) {
+        const themes = JSON.parse(bundled.textContent);
+        if (Object.hasOwn(themes, theme) && typeof themes[theme] === 'string') themeLink.href = themes[theme];
+      } else themeLink.href = new URL(`themes/${theme}.css`, location.href).href;
+    } catch { /* Keep the default theme if metadata or the base URL is unusable. */ }
   }
   const a4 = document.querySelector('meta[name="deck:size"]')?.content === 'a4';
   const [width, height] = a4 ? [794, 1123] : [1280, 720];

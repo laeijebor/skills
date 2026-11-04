@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -59,6 +59,16 @@ test('CLI new → check → PDF / PPTX / PNG / HTML for both deck sizes', { time
       assert.equal(png.readUInt32BE(16), onepager ? 794 : 1280);
       assert.equal(png.readUInt32BE(20), onepager ? 1123 : 720);
     }
+    const checkDirectory = path.dirname(checked.slides[0].png);
+    await writeFile(path.join(checkDirectory, '99-obsolete.png'), 'stale');
+    await writeFile(path.join(checkDirectory, 'keep.txt'), 'keep');
+    run(['check', file]);
+    await assert.rejects(stat(path.join(checkDirectory, '99-obsolete.png')), { code: 'ENOENT' });
+    assert.equal(await readFile(path.join(checkDirectory, 'keep.txt'), 'utf8'), 'keep');
+    // This CSP permits the local runtime but forbids unsafe-eval.
+    const cspFile = path.join(dir, 'csp.html');
+    await writeFile(cspFile, (await readFile(file, 'utf8')).replace('<head>', '<head><meta http-equiv="Content-Security-Policy" content="script-src \'self\' file:">'));
+    assert.equal(run(['check', cspFile, '--out', path.join(dir, 'csp-check')]).ok, true);
     const pdf = run(['pdf', file]);
     await substantial(pdf.file);
     assert.equal((await readFile(pdf.file)).subarray(0, 5).toString(), '%PDF-');
@@ -73,11 +83,15 @@ test('CLI new → check → PDF / PPTX / PNG / HTML for both deck sizes', { time
       assert.equal(png.readUInt32BE(16), onepager ? 1588 : 2560);
       assert.equal(png.readUInt32BE(20), onepager ? 2246 : 1440);
     }
+    const pngDirectory = path.dirname(pngs.files[0]);
+    await writeFile(path.join(pngDirectory, '99-obsolete.png'), 'stale');
+    const selected = run(['png', file, '--slide', onepager ? 'summary' : 'takeaways']);
+    assert.deepEqual(selected.files.map(file => path.basename(file)), [onepager ? '01-summary.png' : '07-takeaways.png']);
+    assert.deepEqual(await readdir(pngDirectory), selected.files.map(file => path.basename(file)));
     const html = run(['html', file, '--theme', 'paper']);
     await substantial(html.file);
     // Recheck after moving the single file away from all its source assets.
     const isolated = path.join(root, `${onepager ? 'a4' : 'wide'}.html`);
-    const { writeFile } = await import('node:fs/promises');
     await writeFile(isolated, await readFile(html.file));
     const bundled = run(['check', isolated, '--theme', 'paper', '--out', path.join(root, onepager ? 'a4-check' : 'wide-check')]);
     assert.equal(bundled.slides.length, count);

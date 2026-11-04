@@ -8,12 +8,13 @@ test('options accept separated and equals values and command-specific flags', ()
   assert.deepEqual(parseOptions(['png', 'deck.html', '--scale=3', '--browser', '/path with spaces/chrome', '--json']).options, { scale: '3', browser: '/path with spaces/chrome', json: true });
   assert.equal(parseOptions(['--help']).options.help, true);
   assert.equal(parseOptions(['pdf', '-h']).options.help, true);
+  assert.equal(parseOptions(['png', 'deck.html', '--slide', 'takeaways']).options.slide, 'takeaways');
 });
 
 test('rejects unknown, missing, invalid and inappropriate options', () => {
   for (const args of [
     ['unknown'], ['pdf'], ['pdf', 'a', 'b'], ['pdf', 'a', '--bogus'], ['pdf', 'a', '--out'],
-    ['pdf', 'a', '--out', '--json'], ['pdf', 'a', '--force'], ['check', 'a', '--scale', '2'],
+    ['pdf', 'a', '--out', '--json'], ['pdf', 'a', '--force'], ['check', 'a', '--scale', '2'], ['pdf', 'a', '--slide', 'x'],
     ['new', 'a', '--theme', 'brand'], ['new', 'a', '--title'], ['pdf', 'a', '--theme', '../secret'],
     ['png', 'a', '--scale', '0'], ['png', 'a', '--scale', '-1'], ['png', 'a', '--scale', 'NaN'],
     ['png', 'a', '--scale', 'Infinity'], ['png', 'a', '--scale', '9'], ['pdf', 'a', '--json=false']

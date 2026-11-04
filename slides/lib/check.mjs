@@ -1,5 +1,5 @@
 // Runs inside Chromium. Geometry and contrast checks are deliberately approximate.
-export function inspectSlide(index, minimumText) {
+export function inspectSlide({ index, minimumText }) {
   const slide = document.querySelectorAll('main.deck > section.slide')[index];
   const bounds = slide.getBoundingClientRect();
   const issues = [];

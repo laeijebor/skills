@@ -4,7 +4,7 @@ import { runCommand } from '../lib/commands.mjs';
 const usage = {
   new: 'slides new <dir> [--title "…"] [--theme ink|paper] [--onepager] [--force]',
   check: 'slides check <deck.html> [--theme name] [--out dir] [--json]',
-  png: 'slides png <deck.html> [--out dir] [--theme name] [--scale 2] [--json]',
+  png: 'slides png <deck.html> [--out dir] [--theme name] [--scale 2] [--slide id] [--json]',
   pdf: 'slides pdf <deck.html> [--out file.pdf] [--theme name] [--json]',
   pptx: 'slides pptx <deck.html> [--out file.pptx] [--theme name] [--json]',
   html: 'slides html <deck.html> [--out file.html] [--theme name] [--json]'

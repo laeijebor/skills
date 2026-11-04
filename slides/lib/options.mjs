@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { THEME } from './deck.mjs';
 const commands = ['new', 'check', 'png', 'pdf', 'pptx', 'html'];
-const values = new Set(['title', 'theme', 'out', 'browser', 'scale']);
+const values = new Set(['title', 'theme', 'out', 'browser', 'scale', 'slide']);
 const flags = new Set(['help', 'json', 'onepager', 'force']);
 export function parseOptions(args) {
   const options = {}, positional = [];
@@ -23,7 +23,7 @@ export function parseOptions(args) {
   if (command && !commands.includes(command)) throw new Error(`Unknown command: ${command}`);
   if (extra.length) throw new Error('Expected one input path');
   if (!options.help && command && !input) throw new Error(`${command} needs a ${command === 'new' ? 'directory' : 'deck.html path'}`);
-  const allowed = new Set(['help', 'json', ...(command === 'new' ? ['title', 'theme', 'onepager', 'force'] : ['theme', 'out', 'browser', ...(command === 'png' ? ['scale'] : [])])]);
+  const allowed = new Set(['help', 'json', ...(command === 'new' ? ['title', 'theme', 'onepager', 'force'] : ['theme', 'out', 'browser', ...(command === 'png' ? ['scale', 'slide'] : [])])]);
   for (const key of Object.keys(options)) if (!allowed.has(key)) throw new Error(`--${key} is not supported by ${command}`);
   if (options.theme && !(command === 'new' ? ['ink', 'paper'].includes(options.theme) : THEME.test(options.theme))) throw new Error('Invalid theme name');
   if (options.scale !== undefined && (!Number.isFinite(Number(options.scale)) || Number(options.scale) <= 0 || Number(options.scale) > 8)) throw new Error('--scale must be greater than 0 and at most 8');

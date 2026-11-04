@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { newDeck, runCommand } from '../lib/commands.mjs';
 import { parseDeck } from '../lib/deck.mjs';
 import { inlineHTML } from '../lib/inline.mjs';
@@ -37,4 +39,23 @@ test('HTML export of a scaffold is standalone without a browser', async t => {
   assert.equal(parseDeck(await readFile(result.file, 'utf8')).title, 'Portable');
   assert.equal(await inlineHTML(file, 'paper'), await readFile(result.file, 'utf8'));
   await assert.rejects(runCommand('html', file, { out: file }), /Output must differ/);
+});
+
+test('unknown --slide and protected output files return one error JSON line before rendering', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'slides-cli-errors-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const { file } = await newDeck(dir, {});
+  const cli = fileURLToPath(new URL('../bin/slides.mjs', import.meta.url));
+  for (const [args, message] of [
+    [['png', file, '--slide', 'missing'], /Unknown slide id: missing/],
+    [['pdf', file, '--out', path.join(dir, 'slides.css')], /Refusing to overwrite/]
+  ]) {
+    const result = spawnSync(process.execPath, [cli, ...args, '--json'], { encoding: 'utf8' });
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr, '');
+    assert.equal(result.stdout.trim().split('\n').length, 1);
+    const json = JSON.parse(result.stdout);
+    assert.equal(json.ok, false);
+    assert.match(json.error, message);
+  }
 });

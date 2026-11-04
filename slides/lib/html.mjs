@@ -19,14 +19,25 @@ export function parseHTML(source) {
     if (/^<\//.test(raw)) {
       const tag = raw.match(/^<\/([^\s>]+)/)[1].toLowerCase();
       const index = stack.findLastIndex(node => node.tag === tag);
-      if (index > 0) stack.length = index;
+      if (index > 0) {
+        stack[index].closeStart = match.index;
+        stack[index].end = token.lastIndex;
+        stack.length = index;
+      }
     } else if (/^<[a-z]/i.test(raw)) {
       const tag = raw.match(/^<([^\s/>]+)/)[1].toLowerCase();
-      const attrs = {};
+      const attrs = {}, attrRanges = {};
       const attr = /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
       const inside = raw.slice(tag.length + 1, -1);
-      for (const a of inside.matchAll(attr)) attrs[a[1].toLowerCase()] = decode(a[2] ?? a[3] ?? a[4] ?? '');
-      const node = { tag, attrs, children: [], parent };
+      for (const a of inside.matchAll(attr)) {
+        const name = a[1].toLowerCase();
+        // Match the browser's first-attribute-wins rule for duplicate attributes.
+        if (Object.hasOwn(attrs, name)) continue;
+        attrs[name] = decode(a[2] ?? a[3] ?? a[4] ?? '');
+        const start = match.index + tag.length + 1 + a.index;
+        attrRanges[name] = { start, end: start + a[0].length };
+      }
+      const node = { tag, attrs, attrRanges, start: match.index, openEnd: token.lastIndex, end: token.lastIndex, children: [], parent };
       parent.children.push(node);
       if (['script', 'style', 'textarea', 'title'].includes(tag)) {
         const end = new RegExp(`</${tag}\\s*>`, 'ig'); end.lastIndex = token.lastIndex;
@@ -34,6 +45,8 @@ export function parseHTML(source) {
         const stop = close?.index ?? source.length;
         node.children.push({ raw: source.slice(token.lastIndex, stop), parent: node });
         token.lastIndex = close ? end.lastIndex : source.length;
+        node.closeStart = stop;
+        node.end = token.lastIndex;
       } else if (!voids.has(tag) && !raw.endsWith('/>')) stack.push(node);
     } else parent.children.push({ raw, parent });
   }
@@ -46,10 +59,4 @@ export function descendants(node, predicate) {
 export function textContent(node) {
   const rawText = item => item.raw !== undefined ? (/^<!/.test(item.raw) ? '' : item.raw) : item.children.map(rawText).join('');
   return decode(rawText(node)).replace(/\s+/g, ' ').trim();
-}
-export function serialize(node) {
-  if (!node.tag) return node.raw;
-  if (node.tag === '#root') return node.children.map(serialize).join('');
-  const open = `<${node.tag}${Object.entries(node.attrs).map(([key, value]) => ` ${key}="${escape(value)}"`).join('')}>`;
-  return voids.has(node.tag) ? open : `${open}${node.children.map(serialize).join('')}</${node.tag}>`;
 }

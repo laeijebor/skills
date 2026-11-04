@@ -60,7 +60,7 @@ Rules:
 - Shows one slide at a time, scaled to fit the window, letterboxed, preserving the deck size.
 - Location hash selects the slide: `#<slideId>` or `#<n>` (1-based). Defaults to the first slide. Reacts to `hashchange`.
 - Keys: → / Space / PageDown next, ← / PageUp previous, Home first, End last (updates the hash).
-- `?theme=<name>` swaps the `#theme` stylesheet to `themes/<name>.css` (resolved relative to deck.js).
+- `?theme=<name>` swaps the `#theme` stylesheet to `themes/<name>.css` (resolved relative to the deck file). Bundles use only embedded themes; an unknown name keeps the default theme.
 - `?thumb` hides nothing extra but disables key handling (used for thumbnails).
 - Adds a footer to every slide: deck title left, `<n> / <total>` right, theme mark top-right (`--mark` token).
 - Print (`@media print` or `?print`): every slide visible, one per page, page size = deck size, no scaling. `@page` size must follow `deck:size`.

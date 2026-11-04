@@ -176,7 +176,7 @@ the repository containing this skill folder. No global install is required.
 ```text
 slides new <dir> [--title "…"] [--theme ink|paper] [--onepager] [--force]
 slides check <deck.html> [--theme name] [--out dir] [--json]
-slides png <deck.html> [--out dir] [--theme name] [--scale 2] [--json]
+slides png <deck.html> [--out dir] [--theme name] [--scale 2] [--slide id] [--json]
 slides pdf <deck.html> [--out file.pdf] [--theme name] [--json]
 slides pptx <deck.html> [--out file.pptx] [--theme name] [--json]
 slides html <deck.html> [--out file.html] [--theme name] [--json]
@@ -191,10 +191,15 @@ It exits 1 for errors. Gradients/images and translucent backgrounds limit contra
 Open every PNG yourself; the text-size floor (14px, or 9px A4) is a diagnostic,
 not the presentation typography target.
 `png` writes `png/NN-<id>.png` at 2× by default.
+Use `--slide <id>` to render one slide, retaining its original slide number.
+PNG and check outputs replace only existing `NN-*.png` files in their output folder.
 `pdf` preserves text with one exact-size page per slide and backgrounds printed.
 `pptx` embeds one full-bleed 2× image per slide plus speaker notes; text is not editable.
 `html` bundles CSS, JS, images and fonts into one file for offline viewing elsewhere.
-Use local assets and a classic `deck.js`; imported JS modules are not bundled.
+Use assets inside the deck folder and a classic `deck.js`; imported JS modules are not bundled.
+Bundling rejects external hosts and files or symlinks that escape the deck folder.
+Themes resolve relative to the deck file; bundles retain their default for unknown themes.
+Existing files in the deck folder can be overwritten only if their extension matches the export.
 Defaults beside the input are `<name>.pdf`, `<name>.pptx` and `<name>.bundle.html`.
 
 Rendering accepts `--browser <path>` or `SLIDES_BROWSER`; otherwise it tries a
