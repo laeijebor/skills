@@ -198,6 +198,9 @@ PNG and check outputs replace only existing `NN-*.png` files in their output fol
 `html` bundles CSS, JS, images and fonts into one file for offline viewing elsewhere.
 Use assets inside the deck folder and a classic `deck.js`; imported JS modules are not bundled.
 Bundling rejects external hosts and files or symlinks that escape the deck folder.
+HTML export rejects CSP meta tags; remove the tag or export PDF instead.
+SVG images are bundled; embed external sprites in the deck and use `#fragment`
+references because browsers block data URLs in SVG `use` elements.
 Themes resolve relative to the deck file; bundles retain their default for unknown themes.
 Existing files in the deck folder can be overwritten only if their extension matches the export.
 Defaults beside the input are `<name>.pdf`, `<name>.pptx` and `<name>.bundle.html`.

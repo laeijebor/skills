@@ -26,10 +26,42 @@ async function replaceAsync(source, expression, transform) {
   for (const match of matches.reverse()) source = source.slice(0, match.index) + await transform(match) + source.slice(match.index + match[0].length);
   return source;
 }
-async function asset(reference, base, resolve) {
+function splice(source, replacements) {
+  for (const { start, end, value } of replacements.sort((a, b) => b.start - a.start)) source = source.slice(0, start) + value + source.slice(end);
+  return source;
+}
+async function svgResources(node, base, resolve, chain, attribute) {
+  if (!['image', 'feimage', 'use'].includes(node.tag)) return;
+  for (const name of ['href', 'xlink:href']) {
+    const reference = node.attrs[name]?.trim();
+    if (!reference || reference.startsWith('#')) continue;
+    if (node.tag === 'use') {
+      // Chromium forbids data: URLs for <use>. Check confinement first, then
+      // fail rather than silently retaining a file dependency or broken URI.
+      if (!/^data:/i.test(reference)) await resolve(reference, base);
+      throw new Error(`Cannot bundle external SVG <use> reference: ${reference}; embed the sprite in the deck and use a #fragment reference instead`);
+    }
+    const value = await asset(reference, base, resolve, chain);
+    if (value !== reference) attribute(node, name, value);
+  }
+}
+async function asset(reference, base, resolve, chain = new Set()) {
   if (/^(data:|#)/i.test(reference)) return reference;
   const { url, file } = await resolve(reference, base);
-  return data(await readFile(file), mime[path.extname(url.pathname).toLowerCase()] || 'application/octet-stream') + url.hash;
+  const extension = path.extname(url.pathname).toLowerCase();
+  let body = await readFile(file);
+  if (extension === '.svg') {
+    if (chain.has(file)) throw new Error(`Circular SVG resource: ${reference}`);
+    const source = body.toString('utf8'), replacements = [];
+    for (const node of descendants(parseHTML(source), () => true)) {
+      await svgResources(node, url, resolve, new Set([...chain, file]), (node, name, value) => {
+        replacements.push({ ...node.attrRanges[name], value: `${name}="${escape(value)}"` });
+      });
+    }
+    // Re-encode only when something changed, so non-UTF-8 SVGs keep their bytes.
+    if (replacements.length) body = Buffer.from(splice(source, replacements));
+  }
+  return data(body, mime[extension] || 'application/octet-stream') + url.hash;
 }
 async function bundleCSS(source, base, resolve, chain = new Set()) {
   source = await replaceAsync(source, /@import\s+(?:url\(\s*["']?([^"')]+)["']?\s*\)|["']([^"']+)["'])\s*([^;]*);/gi, async match => {
@@ -51,6 +83,9 @@ export async function inlineHTML(file, theme) {
   const root = await realpath(path.dirname(path.resolve(file))), resolve = resolver(root);
   const source = await readFile(file, 'utf8'), tree = parseHTML(source);
   const nodes = descendants(tree, () => true), replacements = [];
+  if (nodes.some(node => node.tag === 'meta' && node.attrs['http-equiv']?.trim().toLowerCase() === 'content-security-policy')) {
+    throw new Error("HTML export can't keep this deck's Content-Security-Policy; remove the meta tag or export PDF instead");
+  }
   const replace = (start, end, value) => replacements.push({ start, end, value });
   const attribute = (node, name, value) => {
     const range = node.attrRanges[name];
@@ -93,6 +128,7 @@ export async function inlineHTML(file, theme) {
       attribute(node, 'integrity', null);
     }
     if (['img', 'source', 'video', 'audio', 'input'].includes(node.tag) && node.attrs.src) attribute(node, 'src', await asset(node.attrs.src, resourceBase, resolve));
+    await svgResources(node, resourceBase, resolve, new Set(), attribute);
     if (node.attrs.poster) attribute(node, 'poster', await asset(node.attrs.poster, resourceBase, resolve));
     if (node.attrs.srcset) {
       const entries = node.attrs.srcset.match(/(?:data:[^\s]+|[^\s,]+)(?:[ \t]+[^,]+)?/g) || [];
@@ -123,7 +159,5 @@ export async function inlineHTML(file, theme) {
   }
   // Preserve all author markup, including omitted closing tags, SVG casing,
   // whitespace and comments. Only resource attributes/elements are replaced.
-  let html = source;
-  for (const { start, end, value } of replacements.sort((a, b) => b.start - a.start)) html = html.slice(0, start) + value + html.slice(end);
-  return html;
+  return splice(source, replacements);
 }

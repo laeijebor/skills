@@ -59,3 +59,18 @@ test('unknown --slide and protected output files return one error JSON line befo
     assert.match(json.error, message);
   }
 });
+
+test('HTML export with CSP returns exactly one JSON error and leaves source/output untouched', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'slides-cli-csp-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const { file } = await newDeck(dir, {});
+  const source = (await readFile(file, 'utf8')).replace('<head>', '<head><meta http-equiv="Content-Security-Policy" content="script-src \'self\'">');
+  await writeFile(file, source);
+  const cli = fileURLToPath(new URL('../bin/slides.mjs', import.meta.url));
+  const result = spawnSync(process.execPath, [cli, 'html', file, '--json'], { encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.equal(result.stderr, '');
+  assert.equal(result.stdout, JSON.stringify({ ok: false, error: "HTML export can't keep this deck's Content-Security-Policy; remove the meta tag or export PDF instead" }) + '\n');
+  assert.equal(await readFile(file, 'utf8'), source);
+  await assert.rejects(stat(path.join(dir, 'deck.bundle.html')), { code: 'ENOENT' });
+});

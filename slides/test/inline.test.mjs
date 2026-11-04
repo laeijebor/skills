@@ -83,7 +83,8 @@ test('every asset entry point rejects traversal, absolute files, escaping symlin
     ref => `<script src="${ref}"></script>`,
     ref => `<img srcset="data:image/png;base64,AAAA 1x, ${ref} 2x">`,
     ref => `<video poster="${ref}"></video>`,
-    ref => `<base href="${ref}">`
+    ref => `<base href="${ref}">`,
+    ...['image', 'feImage', 'use'].flatMap(tag => ['href', 'xlink:href'].map(name => ref => `<svg><${tag} ${name}="${ref}"/></svg>`))
   ];
   for (const reference of references) {
     for (const entry of entries) {
@@ -143,4 +144,90 @@ test('theme overrides and bundled theme discovery resolve from the deck file, ig
   assert.match(unData(nodes.find(node => node.attrs.id === 'theme').attrs.href), /--bg: white/);
   assert.equal(nodes.filter(node => node.tag === 'base').length, 0);
   assert.ok(JSON.parse(textContent(nodes.find(node => node.attrs.id === 'deck-themes'))).paper);
+});
+
+test('HTML export rejects CSP meta tags case-insensitively before reading assets', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'slides-csp-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'deck.html');
+  const message = "HTML export can't keep this deck's Content-Security-Policy; remove the meta tag or export PDF instead";
+  for (const policy of ['Content-Security-Policy', 'content-security-policy', 'CONTENT-SECURITY-POLICY', ' CoNtEnT-SeCuRiTy-PoLiCy ']) {
+    await writeFile(file, `<head><META HTTP-EQUIV="${policy}" content="script-src 'self'"></head><img src="missing.png">`);
+    await assert.rejects(inlineHTML(file), error => error.message === message);
+  }
+  const inert = '<!-- <meta http-equiv="Content-Security-Policy"> --><script>const sample = \'<meta http-equiv="Content-Security-Policy">\';</script><meta name="Content-Security-Policy">';
+  await writeFile(file, inert);
+  assert.equal(await inlineHTML(file), inert);
+});
+
+test('SVG image and feImage href/xlink:href embed PNGs while preserving all other SVG bytes', async () => {
+  const svgFile = fileURLToPath(new URL('./fixtures/svg/resources.svg', import.meta.url));
+  const source = await readFile(svgFile, 'utf8');
+  const png = await readFile(new URL('./fixtures/svg/img/x.png', import.meta.url));
+  const uri = `data:image/png;base64,${png.toString('base64')}`;
+  const expected = source.replaceAll(/(xlink:href|href)=(?:"img\/x\.png"|'img\/x\.png')/g, (_, name) => `${name}="${uri}"`);
+  assert.equal(await inlineHTML(svgFile), expected);
+  assert.ok(expected.includes('<use href="#icon" xlink:href=\'#icon\'/>'));
+});
+
+test('SVG images nested in local image files are recursively bundled with their own base URL', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'slides-nested-svg-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const { cp } = await import('node:fs/promises');
+  await cp(new URL('./fixtures/svg/', import.meta.url), path.join(dir, 'svg'), { recursive: true });
+  const file = path.join(dir, 'deck.html');
+  const source = '<p>Before</p><img src="svg/resources.svg"><p>After</p>';
+  await writeFile(file, source);
+  const bundled = await inlineHTML(file);
+  const image = descendants(parseHTML(bundled), node => node.tag === 'img')[0];
+  assert.match(image.attrs.src, /^data:image\/svg\+xml;base64,/);
+  const svg = unData(image.attrs.src);
+  const images = descendants(parseHTML(svg), node => ['image', 'feimage'].includes(node.tag));
+  assert.equal(images.length, 4);
+  for (const image of images) {
+    const uri = image.attrs.href || image.attrs['xlink:href'];
+    assert.match(uri, /^data:image\/png;base64,/);
+    assert.deepEqual(Buffer.from(uri.split(',')[1], 'base64'), await readFile(path.join(dir, 'svg/img/x.png')));
+  }
+  assert.equal(bundled, source.replace('src="svg/resources.svg"', `src="${image.attrs.src}"`));
+});
+
+test('nested SVG resources retain the deck boundary and report reference cycles', async t => {
+  const parent = await mkdtemp(path.join(tmpdir(), 'slides-svg-boundary-'));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const { mkdir } = await import('node:fs/promises');
+  const dir = path.join(parent, 'deck');
+  await mkdir(dir);
+  const file = path.join(dir, 'deck.html'), svg = path.join(dir, 'image.svg');
+  await writeFile(file, '<img src="image.svg">');
+  await writeFile(path.join(parent, 'secret.txt'), 'Keep this outside.');
+  await writeFile(svg, '<svg><image href="../secret.txt"/></svg>');
+  await assert.rejects(inlineHTML(file), /outside the deck folder: ..\/secret.txt/);
+  await writeFile(svg, '<svg><image xlink:href="//host/image.png"/></svg>');
+  await assert.rejects(inlineHTML(file), /with a host: \/\/host\/image.png/);
+  await writeFile(svg, '<svg><image href="image.svg"/></svg>');
+  await assert.rejects(inlineHTML(file), /Circular SVG resource: image.svg/);
+});
+
+test('external SVG use references fail clearly instead of becoming unsupported data URLs', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'slides-svg-use-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'deck.html');
+  await writeFile(path.join(dir, 'sprite.svg'), await readFile(new URL('./fixtures/svg/sprite.svg', import.meta.url)));
+  for (const name of ['href', 'xlink:href']) {
+    await writeFile(file, `<svg><use ${name}="sprite.svg#icon"/></svg>`);
+    await assert.rejects(inlineHTML(file), /Cannot bundle external SVG <use> reference: sprite.svg#icon; embed the sprite/);
+  }
+});
+
+test('an SVG with nothing to bundle keeps its original bytes (non-UTF-8 encodings survive)', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'slides-latin1-'));
+  const svg = Buffer.concat([Buffer.from('<?xml version="1.0" encoding="ISO-8859-1"?><svg xmlns="http://www.w3.org/2000/svg"><text>Gr'), Buffer.from([0xf6, 0xdf]), Buffer.from('e</text></svg>')]);
+  await writeFile(path.join(dir, 'latin1.svg'), svg);
+  await writeFile(path.join(dir, 'deck.html'), '<!doctype html><html><head></head><body><main class="deck"><section class="slide" id="a"><img src="latin1.svg"></section></main></body></html>');
+  const out = await inlineHTML(path.join(dir, 'deck.html'));
+  const encoded = /src="data:image\/svg\+xml;base64,([^"]+)"/.exec(out)?.[1];
+  assert.ok(encoded, 'svg inlined');
+  assert.deepEqual(Buffer.from(encoded, 'base64'), svg);
+  await rm(dir, { recursive: true, force: true });
 });
