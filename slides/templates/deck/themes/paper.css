@@ -1,0 +1,25 @@
+/* Paper — light, print-first theme. Best for PDFs that get printed or emailed. */
+:root {
+  --theme-name: "Paper";
+  --bg: #fbfaf7;
+  --bg-2: #f3f1ec;
+  --surface: #ffffff;
+  --line: #e4e0d6;
+  --ink: #1b1830;
+  --ink-soft: #3d3854;
+  --muted: #6e687f;
+  --accent: #5b3fd6;
+  --accent-ink: #ffffff;
+  --accent-2: #08717a;
+  --good: #187344;
+  --warn: #895b16;
+  --bad: #c9302c;
+  --font-display: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
+  --font-body: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", Menlo, monospace;
+  --display-weight: 600;
+  --display-tracking: -0.02em;
+  --radius: 10px;
+  --glow: none;
+  --mark: "commando";
+}
