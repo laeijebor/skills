@@ -67,6 +67,8 @@ async function bundleCSS(source, base, resolve, chain = new Set()) {
   source = await replaceAsync(source, /@import\s+(?:url\(\s*["']?([^"')]+)["']?\s*\)|["']([^"']+)["'])\s*([^;]*);/gi, async match => {
     const reference = (match[1] || match[2]).trim();
     if (/^data:/i.test(reference)) return match[0];
+    // layer() and supports() can't be expressed as an @media wrapper; refuse rather than drop styles.
+    if (/(^|\s)(layer\b|supports\()/i.test(match[3])) throw new Error(`Cannot bundle @import with layer() or supports(): ${reference}`);
     const { url, file } = await resolve(reference, base);
     if (chain.has(file)) throw new Error(`Circular CSS import: ${reference}`);
     const css = await bundleCSS(await readFile(file, 'utf8'), url, resolve, new Set([...chain, file]));

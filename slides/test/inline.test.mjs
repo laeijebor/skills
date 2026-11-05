@@ -231,3 +231,13 @@ test('an SVG with nothing to bundle keeps its original bytes (non-UTF-8 encoding
   assert.deepEqual(Buffer.from(encoded, 'base64'), svg);
   await rm(dir, { recursive: true, force: true });
 });
+
+test('@import with layer() or supports() is refused instead of losing styles', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'slides-layer-'));
+  await writeFile(path.join(dir, 'a.css'), 'p{color:red}');
+  for (const qualifier of ['layer(theme)', 'layer', 'supports(display: grid)']) {
+    await assert.rejects(inlineCSS(`@import "a.css" ${qualifier};`, pathToFileURL(path.join(dir, 'deck.html')).href), /layer\(\) or supports\(\)/);
+  }
+  assert.match(await inlineCSS('@import "a.css" screen;', pathToFileURL(path.join(dir, 'deck.html')).href), /@media screen/);
+  await rm(dir, { recursive: true, force: true });
+});
