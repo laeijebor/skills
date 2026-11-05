@@ -1,0 +1,2 @@
+@import "nested/import.css" screen;
+.slide { background: url("icon.svg"); }

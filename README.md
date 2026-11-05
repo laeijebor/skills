@@ -48,3 +48,20 @@ ln -s "<absolute-path-to-this-repo>/pr-diagram" ~/.config/opencode/skills/pr-dia
 ```
 
 Needs Node 20.11+ and GitHub CLI 2.99+.
+
+### slides
+
+Make visual slide decks and A4 one-pagers from code, evidence or a topic.
+Includes HTML layouts, Ink and Paper themes, and a small Node CLI to scaffold,
+check and export PDF, PowerPoint, PNG and self-contained HTML. Works without
+Commando. See `slides/SKILL.md`.
+
+```bash
+ln -s "<absolute-path-to-this-repo>/slides" ~/.claude/skills/slides
+ln -s "<absolute-path-to-this-repo>/slides" ~/.codex/skills/slides
+ln -s "<absolute-path-to-this-repo>/slides" ~/.config/opencode/skills/slides
+npm install --prefix "<absolute-path-to-this-repo>/slides"
+```
+
+Needs Node 20+ and Chromium/Chrome for rendering. Install the CLI dependencies once,
+then run `node <absolute-path-to-this-repo>/slides/bin/slides.mjs --help`.

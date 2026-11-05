@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How this deck format works</title>
+<meta name="deck:title" content="How this deck format works">
+<meta name="deck:size" content="16:9">
+<link rel="stylesheet" href="slides.css">
+<link rel="stylesheet" href="themes/ink.css" id="theme">
+</head>
+<body><main class="deck">
+<section class="slide" id="start" data-layout="title" data-title="The format turns evidence into a visual story">
+  <p class="kicker">Deck format v1 · starter</p>
+  <h1 data-canvas-label="Headline">The format turns evidence into a visual story</h1>
+  <p class="lede">How this deck format works: one finding, one visual, one slide.</p>
+  <div class="meta-row"><span class="pill"><span class="dot accent"></span>Plain HTML</span><span class="pill">Portable exports</span></div>
+  <aside class="notes">Replace the starter content with findings from your own evidence. The remaining slides demonstrate the available layouts.</aside>
+  <aside class="ask" data-key="audience" data-options='["Technical reviewers (recommended)","A wider audience"]'>Who should this deck help?</aside>
+</section>
+<section class="slide" id="story" data-layout="statement">
+  <p class="kicker">Story</p>
+  <h2>Reading only the headlines should explain the whole argument</h2>
+  <p class="lede">Lead with the finding. Put the supporting detail in speaker notes.</p>
+</section>
+<section class="slide" id="layouts">
+  <p class="kicker">Choose a layout</p><h2>Three reusable shapes cover most evidence</h2>
+  <div class="body cols c3">
+    <div class="card"><span class="tag">Compare</span><h3>Show the difference</h3><p>Use two columns for before and after.</p></div>
+    <div class="card"><span class="tag">Measure</span><h3>Make scale visible</h3><p>Use a stat or chart for numbers.</p></div>
+    <div class="card"><span class="tag">Explain</span><h3>Show the path</h3><ul><li>Order the steps.</li><li>Mark the failure.</li></ul></div>
+  </div>
+</section>
+<section class="slide" id="evidence">
+  <p class="kicker">Evidence · HTML representation</p><h2>Numbered callouts connect a visual to its explanation</h2>
+  <div class="body cols split">
+    <div class="stat"><b class="accent">①</b><span>Number each callout and repeat its number in the caption.</span></div>
+    <div class="shots"><figure class="shot" style="margin:0">
+      <div class="device"><div class="representation"><span class="pill">Representation</span><div class="card"><h3>A finding</h3><p>Evidence lives here.</p></div><span class="muted">Replace with a capture</span></div><span class="callout" style="left:-12px;top:120px">1</span></div>
+      <figcaption>① Crop to the evidence that matters.</figcaption>
+    </figure></div>
+  </div>
+</section>
+<section class="slide" id="sequence">
+  <p class="kicker">Workflow</p><h2>A visible sequence makes the next action clear</h2>
+  <div class="body" style="display:flex;flex-direction:column;justify-content:center">
+    <div class="flow">
+      <div class="node"><div class="n">01</div><h3>Outline</h3><p>Find the story.</p></div>
+      <div class="node"><div class="n">02</div><h3>Gather</h3><p>Keep sources.</p></div>
+      <div class="node"><div class="n">03</div><h3>Build</h3><p>Pick layouts.</p></div>
+      <div class="node hot"><div class="n">04</div><h3>Inspect</h3><p>Catch defects.</p></div>
+      <div class="node"><div class="n">05</div><h3>Export</h3><p>Share results.</p></div>
+    </div><div class="loop"><span>↺ Fix anything the check or visual review catches</span></div>
+  </div>
+</section>
+<section class="slide" id="numbers">
+  <p class="kicker">Illustrative data · replace with measured values</p><h2>A shared scale makes the improvement easy to compare</h2>
+  <div class="body cols c2" style="align-items:center;align-content:center">
+    <div class="card stat"><b class="accent">8 → 3</b><span>Illustrative minutes per review.</span><p>Five minutes saved per review.</p></div>
+    <div class="bars" style="grid-template-columns:105px 1fr">
+      <div class="lbl">Before<small>Minutes</small></div><div class="row"><div class="b before" style="width:58%"><em>8</em></div></div>
+      <div class="lbl">After<small>Minutes</small></div><div class="row"><div class="b after" style="width:22%"><em>3</em></div></div>
+    </div>
+  </div>
+</section>
+<section class="slide" id="takeaways">
+  <p class="kicker">Takeaways · source: deck-format.md</p><h2>Inspect every slide before sharing the result</h2>
+  <div class="body cols c2" style="align-items:start">
+    <ul class="checks"><li><span class="ic good">✓</span><span>Headlines tell the story.</span></li><li><span class="ic good">✓</span><span>Visuals carry the evidence.</span></li><li><span class="ic good">✓</span><span>Notes carry the detail.</span></li></ul>
+    <div class="card"><span class="tag warn">Residual risk</span><h3>Automated checks need human judgement</h3><p>Check every PNG for misleading emphasis, weak evidence and awkward composition.</p></div>
+  </div>
+</section>
+</main><script src="deck.js"></script></body>
+</html>
