@@ -573,6 +573,13 @@ async function archiveWorktreeSessions(item, sessions, ctx) {
   const helper = new RegExp(`^(native_app|tilt)-${basename(item.path).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
   const owners = sessions.filter((session) => !helper.test(session.name))
   if (!owners.length) throw new Error(`only helper session(s) ${sessions.map((session) => `"${session.name}"`).join(', ')} use it; close them in Commando first`)
+  // Each session must be one the audit saw, under the same name, with nothing new in it since.
+  const cutoff = Date.now() - ctx.plan.opts.activeHours * HOUR
+  for (const session of owners) {
+    const recorded = item.sessions?.find((entry) => entry.id === session.id)
+    if (!recorded || recorded.name !== session.name) throw new Error(`session "${session.name}" was not there at audit time`)
+    if (session.activity > Math.max(recorded.activity, cutoff)) throw new Error(`session "${session.name}" has new activity since audit`)
+  }
   const names = owners.map((session) => `"${session.name}"`).join(', ')
   if (ctx.dryRun) return `would archive ${names} in Commando (it commits uncommitted work and removes the worktree; branch ${item.branch ?? 'kept'} kept)`
   const archived = []
