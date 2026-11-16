@@ -1,5 +1,5 @@
 import { obj, arr, str, num, req, id, checkShape, indexById, checkRef } from '../shape.mjs';
-import { base, delta, edgeFields, edgeTone } from '../common.mjs';
+import { base, delta, edgeFields, edgeTone, checkEdges, addEnd } from '../common.mjs';
 import { Scene, pickMode, look, fit, notePanel } from '../scene.mjs';
 import { routeEdges } from '../route.mjs';
 import { gridPositions, checkGridFields } from '../grid.mjs';
@@ -22,11 +22,15 @@ export const spec = obj({
 });
 
 const ROW = 26, HEAD = 34;
+const ownersOf = (doc) => new Map(doc.entities.flatMap((e) => [[e.id, e.id], ...e.fields.map((f) => [`${e.id}.${f.name}`, e.id])]));
 export function validate(doc, issues) {
   checkShape(doc, spec, '', issues);
   if (issues.length) return;
   const ends = new Map(indexById(doc.entities, 'entities', issues));
-  for (const e of doc.entities) for (const f of e.fields) ends.set(`${e.id}.${f.name}`, f);
+  doc.entities.forEach((e, i) => e.fields.forEach((f) => addEnd(ends, `${e.id}.${f.name}`, f, `entities[${i}].fields`, issues)));
+  const owners = ownersOf(doc);
+  // A table may point at itself (a parent id), but only field to field: that is drawn as a loop beside the table.
+  checkEdges(doc.relations, 'relations', issues, { same: (r) => r.from === r.to || (owners.get(r.from) === owners.get(r.to) && (owners.get(r.from) === r.from || owners.get(r.to) === r.to)) });
   checkGridFields(doc.entities, 'entities', issues);
   (doc.relations || []).forEach((r, i) => { checkRef(r.from, ends, `relations[${i}].from`, issues, 'entity (or entity.field)'); checkRef(r.to, ends, `relations[${i}].to`, issues, 'entity (or entity.field)'); });
 }
@@ -34,14 +38,15 @@ export function validate(doc, issues) {
 export function render(doc) {
   const scene = new Scene(doc, label);
   scene.mode = pickMode(doc, doc.entities.map((e) => e.delta || 'unchanged'));
-  const rels = doc.relations || [], owner = (end) => end.split('.')[0];
+  const rels = doc.relations || [], owners = ownersOf(doc), owner = (end) => owners.get(end);
   const sizeOf = (e) => ({ w: Math.min(330, Math.max(210, textWidth(e.name, 13, false, true) + 100, ...e.fields.map((f) => textWidth(f.name, 10.5, true) + textWidth(f.type || '', 10.5, true) + 62))), h: HEAD + e.fields.length * ROW + 6 });
-  const grid = gridPositions(doc.entities, rels.map((r) => ({ from: owner(r.from), to: owner(r.to) })), 'right');
+  const grid = gridPositions(doc.entities, rels.map((r) => ({ from: owner(r.from), to: owner(r.to) })).filter((r) => r.from !== r.to), 'right');
   const cellW = Math.max(...doc.entities.map((e) => sizeOf(e).w)), cellH = Math.max(...doc.entities.map((e) => sizeOf(e).h));
   const gapX = Math.min(200, Math.max(84, ...rels.filter((r) => r.label).map((r) => textWidth(r.label, 10, true) + 50)));
   for (const e of doc.entities) {
     const { w, h } = sizeOf(e), cell = grid.cells.get(e.id), x = cell.col * (cellW + gapX), y = cell.row * (cellH + 50);
     const lk = look(scene, e.delta);
+    fit(scene, e.name, w - (lk.badge ? 96 : 24), 13, false, true, 'entity name');
     let s = `<g${lk.opacity ? ` opacity="${lk.opacity}"` : ''}><rect x="${r1(x)}" y="${r1(y)}" width="${w}" height="${h}" rx="8" fill="${C.card}" stroke="${lk.stroke || C.cardStroke}" stroke-width="${lk.stroke ? 1.6 : 1.2}"${lk.dash ? ` stroke-dasharray="${lk.dash}"` : ''}/>`;
     s += `<text class="t" x="${r1(x + 12)}" y="${r1(y + 22)}"${lk.strike ? ' text-decoration="line-through"' : ''}>${esc(e.name)}</text><path d="M${r1(x)} ${r1(y + HEAD)}h${w}" stroke="${C.cardStroke}"/>`;
     if (lk.badge) s += `<text class="l" x="${r1(x + w - 10)}" y="${r1(y + 21)}" text-anchor="end" font-size="8" style="fill:${lk.tone}">${lk.badge === 'NEW' ? 'NEW TABLE' : lk.badge}</text>`;

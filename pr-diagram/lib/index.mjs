@@ -28,6 +28,11 @@ export function render(doc, opts = {}) {
   const issues = validate(doc, opts);
   if (issues.some((i) => i.level === 'error')) return { issues };
   const scene = byName().get(doc.type).render(doc, opts);
+  // Two cards on top of each other usually means col/row values that are too close.
+  const cards = [...scene.boxes.values()].filter((b) => b.obstacle && !b.parent);
+  cards.forEach((a, i) => cards.slice(i + 1).forEach((b) => {
+    if (a.x < b.x + b.w - 1 && a.x + a.w > b.x + 1 && a.y < b.y + b.h - 1 && a.y + a.h > b.y + 1) scene.error(`"${a.name || a.id}" and "${b.name || b.id}" overlap; give them col/row values at least 1 apart`);
+  }));
   const out = finalize(scene);
   const all = [...issues, ...scene.issues];
   return all.some((i) => i.level === 'error') ? { issues: all, draft: out } : { ...out, issues: all };

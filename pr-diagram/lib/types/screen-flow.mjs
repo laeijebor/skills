@@ -1,7 +1,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import { resolve, extname } from 'node:path';
 import { obj, arr, str, num, bool, enm, req, id, checkShape, indexById, checkRef } from '../shape.mjs';
-import { base, delta, edgeFields, edgeTone } from '../common.mjs';
+import { base, delta, edgeFields, edgeTone, checkEdges, addEnd } from '../common.mjs';
 import { Scene, pickMode, look, fit } from '../scene.mjs';
 import { routeEdges } from '../route.mjs';
 import { gridPositions, checkGridFields } from '../grid.mjs';
@@ -26,12 +26,13 @@ export const spec = obj({
 const SIZE = { phone: { w: 196, h: 350 }, desktop: { w: 320, h: 220 } };
 const EL_H = { row: 30, button: 32, text: 22, input: 30, image: 64, heading: 20 };
 
+const ownersOf = (doc) => new Map(doc.screens.flatMap((s) => [[s.id, s.id], ...(s.elements || []).filter((e) => e.id).map((e) => [`${s.id}.${e.id}`, s.id])]));
 export function validate(doc, issues, opts = {}) {
   checkShape(doc, spec, '', issues);
   if (issues.length) return;
   const ends = new Map(indexById(doc.screens, 'screens', issues));
   doc.screens.forEach((s, si) => {
-    for (const e of s.elements || []) if (e.id) ends.set(`${s.id}.${e.id}`, e);
+    for (const e of s.elements || []) if (e.id) addEnd(ends, `${s.id}.${e.id}`, e, `screens[${si}].elements`, issues);
     if (s.image) {
       if (s.elements?.length) issues.push({ level: 'error', message: `screens[${si}]: use either image (a real screenshot) or elements (a wireframe), not both` });
       const file = resolve(opts.baseDir || '.', s.image);
@@ -40,13 +41,15 @@ export function validate(doc, issues, opts = {}) {
     }
   });
   checkGridFields(doc.screens, 'screens', issues);
+  const owners = ownersOf(doc);
+  checkEdges(doc.links, 'links', issues, { same: (l) => owners.get(l.from) === owners.get(l.to) });
   (doc.links || []).forEach((l, i) => { checkRef(l.from, ends, `links[${i}].from`, issues, 'screen (or screen.element)'); checkRef(l.to, ends, `links[${i}].to`, issues, 'screen (or screen.element)'); });
 }
 
 export function render(doc, opts = {}) {
   const scene = new Scene(doc, label);
   scene.mode = pickMode(doc, doc.screens.map((s) => s.delta || 'unchanged'));
-  const links = doc.links || [], owner = (end) => end.split('.')[0];
+  const links = doc.links || [], owners = ownersOf(doc), owner = (end) => owners.get(end), isElement = (end) => owners.get(end) !== end;
   const sizeOf = (s) => SIZE[s.device || 'phone'];
   const grid = gridPositions(doc.screens, links.map((l) => ({ from: owner(l.from), to: owner(l.to) })).filter((l) => l.from !== l.to), 'right');
   const cellW = Math.max(...doc.screens.map((s) => sizeOf(s).w)), cellH = Math.max(...doc.screens.map((s) => sizeOf(s).h));
@@ -73,6 +76,7 @@ export function render(doc, opts = {}) {
       const top = y + h - need - 30;
       for (let py = ey; py + 30 < top - 8; py += 38) s += `<rect x="${r1(ex)}" y="${r1(py)}" width="${ew}" height="30" rx="7" fill="#2f3540" opacity=".5"/>`;
       s += `<path d="M${r1(x + 1)} ${r1(top + 18)}a18 18 0 0 1 18-18h${w - 38}a18 18 0 0 1 18 18V${r1(y + h - rx)}a${rx - 1} ${rx - 1} 0 0 1-${rx - 1} ${rx - 1}h-${w - 2 * rx}a${rx - 1} ${rx - 1} 0 0 1-${rx - 1}-${rx - 1}z" fill="${lk.fill || '#30363f'}" stroke="${lk.stroke || '#4a5160'}"/>`;
+      if (top < ey) scene.error(`the sheet on "${sc.title}" has more elements than fit; keep the ones the change touches`);
       ey = top + 20;
     }
     if (ey + need > y + h - 6) scene.error(`the screen "${sc.title}" has more elements than fit; keep the ones the change touches`);
@@ -94,6 +98,6 @@ export function render(doc, opts = {}) {
     scene.add(s + '</g>');
   });
   const byId = new Map(doc.screens.map((s) => [s.id, s]));
-  routeEdges(scene, links.map((l) => ({ from: l.from, to: l.to, label: l.label, ...(l.from.includes('.') ? { fromSides: 'LR' } : {}), ...(l.to.includes('.') ? { toSides: 'LR' } : {}), ...edgeTone(scene, l, (end) => byId.get(owner(end))?.delta) })), { prefer: 'h' });
+  routeEdges(scene, links.map((l) => ({ from: l.from, to: l.to, label: l.label, ...(isElement(l.from) ? { fromSides: 'LR' } : {}), ...(isElement(l.to) ? { toSides: 'LR' } : {}), ...edgeTone(scene, l, (end) => byId.get(owner(end))?.delta) })), { prefer: 'h' });
   return scene;
 }

@@ -1,5 +1,5 @@
 import { obj, arr, str, int, enm, req, id, checkShape, indexById, checkRef } from '../shape.mjs';
-import { base, delta } from '../common.mjs';
+import { base, delta, checkEdges } from '../common.mjs';
 import { Scene, drawNode, drawZone } from '../scene.mjs';
 import { routeEdges } from '../route.mjs';
 import { textWidth, esc, C, r1 } from '../theme.mjs';
@@ -30,6 +30,7 @@ export function validate(doc, issues) {
       checkRef(e.lane, lanes, `scenarios[${si}].events[${i}].lane`, issues, 'lane');
       const k = `${e.lane}@${e.at}`; if (spots.has(k)) issues.push({ level: 'error', message: `scenarios[${si}].events[${i}]: two events sit in lane "${e.lane}" at ${e.at}; give each its own "at"` }); spots.add(k);
     });
+    checkEdges(sc.links, `scenarios[${si}].links`, issues);
     (sc.links || []).forEach((l, i) => { checkRef(l.from, events, `scenarios[${si}].links[${i}].from`, issues, 'event'); checkRef(l.to, events, `scenarios[${si}].links[${i}].to`, issues, 'event'); });
   });
 }

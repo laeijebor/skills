@@ -76,8 +76,46 @@ test('a mostly-new diagram marks what already existed instead of every new card'
 test('before/after works out what was added and removed', () => {
   const svg = render(example('before-after')).svg;
   assert.match(svg, />NEW</);        // withRetry exists only after
-  assert.match(svg, /e-removed/);    // the direct calls exist only before
+  assert.match(svg, /class="e e-removed/); // the direct calls exist only before
   assert.match(svg, />CHANGED</);    // a card whose subtitle differs
+});
+
+test('edges a type cannot draw are refused with a reason', () => {
+  const loop = example('pipeline'); loop.edges.push({ from: 'ota', to: 'ota' });
+  assert.match(errors(validate(loop)).join('\n'), /back to itself/);
+  const twice = example('decision-flow'); twice.edges.push({ ...twice.edges[0] });
+  assert.match(errors(validate(twice)).join('\n'), /listed twice/);
+  const ok = example('state-machine'); ok.transitions.push({ from: 'running', to: 'running', label: 'heartbeat' });
+  assert.deepEqual(errors(render(ok).issues), []);
+});
+
+test('a table can point at itself, field to field', () => {
+  const doc = example('data-model');
+  doc.entities[0].fields.push({ name: 'parent_id', type: 'uuid fk', delta: 'added' });
+  doc.relations.push({ from: 'sessions.parent_id', to: 'sessions.id', label: 'parent', delta: 'added' });
+  assert.deepEqual(errors(render(doc).issues), []);
+});
+
+test('ids with dots still resolve to their owner', () => {
+  const doc = { type: 'data-model', title: 't', entities: ['app.users', 'app.orgs', 'app.teams'].map((id) => ({ id, name: id, fields: [{ name: 'id' }, { name: 'ref' }] })), relations: [{ from: 'app.users.ref', to: 'app.orgs.id' }, { from: 'app.orgs.ref', to: 'app.teams.id' }] };
+  const out = render(doc);
+  assert.deepEqual(errors(out.issues), []);
+  assert.ok(out.width > out.height, 'a chain of three tables lays out left to right');
+});
+
+test('overlapping cards and a name with two meanings are errors', () => {
+  const close = { type: 'decision-flow', title: 't', nodes: [{ id: 'a', label: 'A', col: 0, row: 0 }, { id: 'b', label: 'B', col: 0.5, row: 0 }], edges: [{ from: 'a', to: 'b' }] };
+  assert.match(errors(render(close).issues).join('\n'), /overlap/);
+  const two = { type: 'architecture', title: 't', nodes: [{ id: 'a', label: 'A', parts: [{ id: 'b', label: 'B' }] }, { id: 'a.b', label: 'Dotted' }], edges: [] };
+  assert.match(errors(validate(two)).join('\n'), /names two different things/);
+  assert.match(errors(validate({ ...example('sequence'), title: 'bell\u0007' })).join('\n'), /control character/);
+});
+
+test('small measured values keep their digits', () => {
+  const doc = { ...example('measure'), unit: 's', bars: [{ label: 'Before', segments: [{ label: 'a', value: 0.004 }] }, { label: 'After', segments: [{ label: 'a', value: 0.003 }] }] };
+  const out = render(doc);
+  assert.deepEqual(errors(out.issues), []);
+  assert.match(out.svg, /0\.004 s/);
 });
 
 test('the CLI renders a file and fails on a broken one', () => {

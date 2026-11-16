@@ -1,5 +1,5 @@
 import { obj, arr, str, num, enm, req, id, checkShape, indexById, checkRef } from '../shape.mjs';
-import { base, edgeFields } from '../common.mjs';
+import { base, edgeFields, checkEdges } from '../common.mjs';
 import { Scene, drawZone, cardSize } from '../scene.mjs';
 import { routeEdges } from '../route.mjs';
 import { gridPositions, checkGridFields } from '../grid.mjs';
@@ -32,6 +32,7 @@ export function validate(doc, issues) {
   if (issues.length) return;
   for (const key of ['before', 'after']) {
     const nodes = indexById(doc[key].nodes, `${key}.nodes`, issues);
+    checkEdges(doc[key].edges, `${key}.edges`, issues);
     (doc[key].edges || []).forEach((e, i) => { checkRef(e.from, nodes, `${key}.edges[${i}].from`, issues, `node in ${key}`); checkRef(e.to, nodes, `${key}.edges[${i}].to`, issues, `node in ${key}`); });
   }
   checkGridFields(union(doc).nodes, 'nodes (before and after together)', issues);

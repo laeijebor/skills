@@ -1,5 +1,5 @@
 import { obj, arr, str, int, num, enm, req, id, checkShape, indexById, checkRef } from '../shape.mjs';
-import { base, delta, edgeFields, edgeTone, CIRCLED } from '../common.mjs';
+import { base, delta, edgeFields, edgeTone, checkEdges, addEnd, CIRCLED } from '../common.mjs';
 import { Scene, pickMode, drawNode, drawZone, cardSize, caption, wrap, capWidth } from '../scene.mjs';
 import { routeEdges, at } from '../route.mjs';
 import { gridPositions, checkGridFields } from '../grid.mjs';
@@ -26,7 +26,8 @@ export function validate(doc, issues) {
   if (issues.length) return;
   const nodes = indexById(doc.nodes, 'nodes', issues), zones = indexById(doc.zones, 'zones', issues);
   const ends = new Map(nodes);
-  doc.nodes.forEach((n, i) => (n.parts || []).forEach((p) => ends.set(`${n.id}.${p.id}`, p)) || indexById(n.parts, `nodes[${i}].parts`, issues));
+  doc.nodes.forEach((n, i) => { indexById(n.parts, `nodes[${i}].parts`, issues); (n.parts || []).forEach((p) => addEnd(ends, `${n.id}.${p.id}`, p, `nodes[${i}].parts`, issues)); });
+  checkEdges(doc.edges, 'edges', issues);
   const focus = doc.layout === 'focus';
   if (focus) {
     if (doc.zones) issues.push({ level: 'error', message: 'zones: the focus layout places cards by role; remove zones' });
@@ -117,7 +118,7 @@ export function render(doc) {
     const order = [...z.nodes].sort((a, b) => (pull.get(a.id) ?? Infinity) - (pull.get(b.id) ?? Infinity));
     order.forEach((n, i) => { z.grid.cells.get(n.id).col = i; });
     const target = pulled.reduce((sum, n) => sum + pull.get(n.id), 0) / pulled.length;
-    const span = order.indexOf(pulled[pulled.length - 1]), mid = (order.indexOf(pulled[0]) + span) / 2;
+    const at = pulled.map((n) => order.indexOf(n)), mid = (Math.min(...at) + Math.max(...at)) / 2;
     z.ox = Math.min(z.x + z.W - z.pad - z.iw, Math.max(z.x + z.pad, target - z.cellW / 2 - mid * (z.cellW + z.gapX)));
     place(z);
   }

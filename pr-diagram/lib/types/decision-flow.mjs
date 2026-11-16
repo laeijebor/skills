@@ -1,5 +1,5 @@
 import { obj, arr, str, num, enm, req, id, checkShape, indexById, checkRef } from '../shape.mjs';
-import { base, delta, edgeFields, edgeTone } from '../common.mjs';
+import { base, delta, edgeFields, edgeTone, checkEdges } from '../common.mjs';
 import { Scene, pickMode, cardSize } from '../scene.mjs';
 import { routeEdges } from '../route.mjs';
 import { checkGridFields } from '../grid.mjs';
@@ -23,6 +23,7 @@ export function validate(doc, issues) {
   if (issues.length) return;
   const nodes = indexById(doc.nodes, 'nodes', issues);
   checkGridFields(doc.nodes, 'nodes', issues);
+  checkEdges(doc.edges, 'edges', issues);
   doc.edges.forEach((e, i) => { checkRef(e.from, nodes, `edges[${i}].from`, issues, 'node'); checkRef(e.to, nodes, `edges[${i}].to`, issues, 'node'); });
   doc.nodes.forEach((n, i) => { if (n.kind === 'decision' && doc.edges.filter((e) => e.from === n.id && e.delta !== 'removed').length < 2) issues.push({ level: 'error', message: `nodes[${i}]: the decision "${n.label}" needs at least two outgoing edges that still exist (one per answer)` }); });
 }

@@ -16,6 +16,7 @@ export function checkShape(value, spec, path, issues) {
     case 'str':
       if (typeof value !== 'string') return fail('must be a string');
       if (!value.trim() && !spec.empty) return fail('must not be empty');
+      if (/[\u0000-\u001f\u007f\ufffe\uffff]/.test(value)) return fail('contains a control character (a tab, newline or similar); remove it');
       if (value.length > spec.max) return fail(`is ${value.length} characters; the limit is ${spec.max}`);
       if (spec.pattern && !spec.pattern.test(value)) return fail(`must be ${spec.what || 'in the expected format'}`);
       return;

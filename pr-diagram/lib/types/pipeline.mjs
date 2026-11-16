@@ -1,5 +1,5 @@
 import { obj, arr, str, enm, req, id, checkShape, checkRef } from '../shape.mjs';
-import { base, delta, edgeFields, edgeTone } from '../common.mjs';
+import { base, delta, edgeFields, edgeTone, checkEdges } from '../common.mjs';
 import { Scene, pickMode, drawNode, cardSize, caption, capWidth, notePanel } from '../scene.mjs';
 import { routeEdges } from '../route.mjs';
 import { textWidth, C, r1 } from '../theme.mjs';
@@ -32,6 +32,7 @@ export function validate(doc, issues) {
   const jobs = new Map();
   doc.stages.forEach((s, si) => s.jobs.forEach((j, ji) => { if (jobs.has(j.id)) issues.push({ level: 'error', message: `stages[${si}].jobs[${ji}].id: "${j.id}" is used twice` }); jobs.set(j.id, j); }));
   (doc.edges || []).forEach((e, i) => { checkRef(e.from, jobs, `edges[${i}].from`, issues, 'job'); checkRef(e.to, jobs, `edges[${i}].to`, issues, 'job'); });
+  checkEdges(doc.edges, 'edges', issues);
   if (!doc.edges) doc.stages.slice(1).forEach((s, i) => { if (s.jobs.length * doc.stages[i].jobs.length > 6) issues.push({ level: 'error', message: `stages[${i + 1}]: too many connections to draw by default between "${doc.stages[i].label}" and "${s.label}"; list the real ones in edges` }); });
 }
 

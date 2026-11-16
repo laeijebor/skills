@@ -11,7 +11,7 @@ export const question = 'How much, and from which phase?';
 export const spec = obj({
   ...base(name),
   metric: req(str({ max: 60 })), unit: req(str({ max: 10 })), source: req(str({ max: 160 })), lowerIsBetter: bool(),
-  bars: req(arr(obj({ label: req(str({ max: 14 })), segments: req(arr(obj({ label: req(str({ max: 30 })), value: req(num({ min: 0 })), delta: delta() }), { min: 1, max: 8 })) }), { min: 2, max: 4 }))
+  bars: req(arr(obj({ label: req(str({ max: 14 })), segments: req(arr(obj({ label: req(str({ max: 30 })), value: req(num({ min: 0, max: 1e12 })), delta: delta() }), { min: 1, max: 8 })) }), { min: 2, max: 4 }))
 });
 
 export function validate(doc, issues) {
@@ -19,7 +19,7 @@ export function validate(doc, issues) {
   if (!issues.length && !doc.bars.some((b) => b.segments.some((s) => s.value > 0))) issues.push({ level: 'error', message: 'bars: every value is 0; there is nothing to draw' });
 }
 
-const fmt = (n) => (Math.round(n * 100) / 100).toLocaleString('en-US');
+const fmt = (n) => Math.abs(n) >= 100 ? (Math.round(n * 10) / 10).toLocaleString('en-US') : Number(n.toPrecision(3)).toLocaleString('en-US', { maximumSignificantDigits: 3 });
 function niceStep(max) { const raw = max / 4, pow = 10 ** Math.floor(Math.log10(raw)), f = raw / pow; return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * pow; }
 
 export function render(doc) {
@@ -51,7 +51,7 @@ export function render(doc) {
   });
   const step = niceStep(max);
   scene.add(`<path d="M${r1(x0)} ${y - 8}H${r1(x0 + BW)}" stroke="#4a5160"/>`);
-  for (let v = 0; v <= max + 1e-9; v += step) scene.add(`<path d="M${r1(x0 + v * scale)} ${y - 12}v8" stroke="#4a5160"/><text class="s" x="${r1(x0 + v * scale)}" y="${y + 10}" text-anchor="middle">${esc(fmt(v))}</text>`);
+  for (let i = 0, v = 0; i <= Math.floor(max / step + 1e-9); i++, v = i * step) scene.add(`<path d="M${r1(x0 + v * scale)} ${y - 12}v8" stroke="#4a5160"/><text class="s" x="${r1(x0 + v * scale)}" y="${y + 10}" text-anchor="middle">${esc(fmt(v))}</text>`);
   y += 32;
   const first = totals[0], last = totals[totals.length - 1], W = Math.max(scene.w, x0 + BW);
   const lines = wrap(doc.source, W - 190, 10.5), H = 46 + lines.length * 16 + 12;

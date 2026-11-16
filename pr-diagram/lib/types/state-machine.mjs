@@ -1,5 +1,5 @@
 import { obj, arr, str, num, bool, req, id, checkShape, indexById, checkRef } from '../shape.mjs';
-import { base, delta, edgeFields, edgeTone } from '../common.mjs';
+import { base, delta, edgeFields, edgeTone, checkEdges } from '../common.mjs';
 import { Scene, pickMode } from '../scene.mjs';
 import { routeEdges } from '../route.mjs';
 import { checkGridFields } from '../grid.mjs';
@@ -22,6 +22,7 @@ export function validate(doc, issues) {
   if (issues.length) return;
   const states = indexById(doc.states, 'states', issues);
   checkGridFields(doc.states, 'states', issues);
+  checkEdges(doc.transitions, 'transitions', issues, { self: true });
   doc.transitions.forEach((t, i) => { checkRef(t.from, states, `transitions[${i}].from`, issues, 'state'); checkRef(t.to, states, `transitions[${i}].to`, issues, 'state'); });
 }
 

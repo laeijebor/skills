@@ -38,6 +38,9 @@ says what to change.
 - **Size.** Aim for 5 to 10 cards. Past about 14 the picture stops being
   readable at pull-request width; split it into two diagrams instead.
 - **Ids** use letters, digits, `.`, `_` and `-`.
+- **Edges.** List each edge once. Only `state-machine` and `sequence` draw an
+  edge from a thing to itself; `data-model` draws one between two fields of
+  the same table. Elsewhere, say it in a label or the caption.
 
 ## The types
 
