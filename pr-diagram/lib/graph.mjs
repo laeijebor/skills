@@ -18,11 +18,14 @@ export function drawGraph(scene, nodes, edges, o = {}) {
     const need = Math.min(200, textWidth(e.label, 10, true) + 46) / (hi - lo);
     for (let g = lo; g < hi && g < gaps.length; g++) gaps[g] = Math.max(gaps[g], need);
   }
-  const xs = [0]; gaps.forEach((g, i) => xs.push(xs[i] + cellW + g));
+  // Whole-number columns are each as wide as their own widest node; half-steps need one shared width.
+  const whole = [...grid.cells.values()].every((c) => Number.isInteger(c.col));
+  const colW = Array.from({ length: Math.ceil(grid.cols) }, (_, c) => whole ? Math.max(0, ...nodes.filter((n) => grid.cells.get(n.id).col === c).map((n) => shape(n) === 'card' ? cardW : size(n).w)) || cardW : cellW);
+  const xs = [0]; gaps.forEach((g, i) => xs.push(xs[i] + colW[i] + g));
   const xOf = (col) => { const f = Math.floor(col), t = col - f; return xs[f] + (t ? t * ((xs[f + 1] ?? xs[f] + cellW + minGapX) - xs[f]) : 0); };
   for (const n of nodes) {
     const cell = grid.cells.get(n.id), s = size(n), sh = shape(n), w = sh === 'card' ? cardW : s.w;
-    drawNode(scene, { id: prefix + n.id, x: ox + xOf(cell.col) + (cellW - w) / 2, y: oy + cell.row * (cellH + gapY) + (cellH - s.h) / 2, w, h: s.h, label: n.label, sub: n.sub, delta: o.delta ? o.delta(n) : n.delta, shape: sh });
+    drawNode(scene, { id: prefix + n.id, x: ox + xOf(cell.col) + ((whole ? colW[cell.col] : cellW) - w) / 2, y: oy + cell.row * (cellH + gapY) + (cellH - s.h) / 2, w, h: s.h, label: n.label, sub: n.sub, delta: o.delta ? o.delta(n) : n.delta, shape: sh });
   }
-  return { grid, w: xOf(grid.cols - 1) + cellW, h: (grid.rows - 1) * (cellH + gapY) + cellH, cellW, cellH };
+  return { grid, w: xOf(Math.ceil(grid.cols) - 1) + colW[colW.length - 1], h: (grid.rows - 1) * (cellH + gapY) + cellH, cellW, cellH };
 }

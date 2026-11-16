@@ -11,7 +11,7 @@ export const question = 'Which stage changed, and what gates it?';
 
 export const spec = obj({
   ...base(name),
-  stages: req(arr(obj({ label: req(str({ max: 20 })), jobs: req(arr(obj({ id: req(id()), label: req(str({ max: 28 })), sub: str({ max: 30 }), delta: delta() }), { min: 1, max: 5 })) }), { min: 2, max: 7 })),
+  stages: req(arr(obj({ label: req(str({ max: 20 })), jobs: req(arr(obj({ id: req(id()), label: req(str({ max: 28 })), sub: str({ max: 30 }), delta: delta() }), { min: 1, max: 5 })) }), { min: 2, max: 6 })),
   edges: arr(obj(edgeFields()), { max: 30 }),
   notesTitle: str({ max: 40 }),
   notes: arr(obj({ text: req(str({ max: 160 })), tone: enm(['added', 'changed', 'removed']) }), { max: 6 })
@@ -40,8 +40,8 @@ export function render(doc) {
   const jobs = jobsOf(doc), edges = edgesOf(doc);
   scene.mode = pickMode(doc, jobs.map((j) => j.delta || 'unchanged'));
   const stageOf = new Map(doc.stages.flatMap((st, i) => st.jobs.map((j) => [j.id, i])));
-  const gapAfter = (i) => Math.min(200, Math.max(64, ...edges.filter((e) => e.label && Math.min(stageOf.get(e.from), stageOf.get(e.to)) === i).map((e) => textWidth(e.label, 10, true) + 46)));
-  const gapY = 30, top = 44;
+  const gapAfter = (i) => Math.min(200, Math.max(48, ...edges.filter((e) => e.label && Math.min(stageOf.get(e.from), stageOf.get(e.to)) === i).map((e) => textWidth(e.label, 10, true) + 46)));
+  const gapY = edges.some((e) => e.label && stageOf.get(e.from) === stageOf.get(e.to)) ? 52 : 30, top = 44;
   const tallest = Math.max(...doc.stages.map((s) => s.jobs.reduce((h, j) => h + cardSize(j).h, 0) + (s.jobs.length - 1) * gapY));
   let x = 0;
   for (const [si, stage] of doc.stages.entries()) {

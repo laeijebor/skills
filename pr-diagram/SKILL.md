@@ -51,7 +51,8 @@ noise.
    origin/<base>...HEAD`. Then read enough surrounding code to know the
    unchanged neighbours.
 3. Read `<skill>/references/document.md` once per session, then start from an
-   example:
+   example. An example shows the shape of a document only; every name, label
+   and edge in yours must come from the diff:
 
    ```bash
    node <skill>/bin/pr-diagram.mjs example <type> > .pr-diagram/<name>.json
@@ -88,7 +89,10 @@ node <skill>/bin/pr-diagram.mjs render .pr-diagram/<name>.json --png
 It writes `.pr-diagram/<name>.svg` and a `.png` preview (the preview needs
 Chrome or Chromium; set `PR_DIAGRAM_BROWSER` if it is somewhere unusual).
 Errors name the field or the edge and say what to change. Fix every one in the
-JSON; never edit the SVG. Add `--draft` to draw a document whose layout still
+JSON; never edit the SVG. A warning still draws: the common one is a diagram
+wider than 1240px, which GitHub shrinks until the text is small. Fix it (fewer
+columns, shorter labels, or split into two diagrams) unless the picture is
+still readable in the PNG. Several documents can be rendered in one command. Add `--draft` to draw a document whose layout still
 has errors, so you can see what the error is about.
 
 Then view the PNG before attaching anything. Check that the picture answers

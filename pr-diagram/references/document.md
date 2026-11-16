@@ -10,7 +10,9 @@ node <skill>/bin/pr-diagram.mjs example <type>    # a complete document to adapt
 node <skill>/bin/pr-diagram.mjs fields <type>     # every field and its limits
 ```
 
-Start from `example <type>` and change it. The validator is strict: an unknown
+Start from `example <type>` and change it. The examples show the shape of a
+document, not your change: replace every name, label and edge with what the
+diff actually does. The validator is strict: an unknown
 field, an id that is not declared, a label that would be cut off, an edge that
 runs behind a card and a label with no free space are all errors. Each error
 says what to change.
@@ -124,9 +126,11 @@ throughput-style metrics. Never estimate values.
 
 ### pipeline
 
-`stages` left to right, each with `jobs`. Without `edges`, every job feeds
+`stages` left to right (up to 6), each with `jobs`; jobs in one stage are
+drawn stacked and read as running side by side. Without `edges`, every job feeds
 every job of the next stage; list `edges` when that is not true or when one
-needs a `label` (a gate, a condition). `notes` are up to 6 lines under the
+needs a `label` (a gate, a condition). An edge may also join two jobs in the
+same stage. `notes` are up to 6 lines under the
 diagram for what changes for someone who merges; `notesTitle` renames the box.
 
 ### change-map

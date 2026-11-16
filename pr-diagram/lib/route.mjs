@@ -6,7 +6,7 @@ const SIDES = { L: [-1, 0], R: [1, 0], T: [0, -1], B: [0, 1] };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 function port(box, side, frac = 0.5) {
-  const span = box.shape === 'diamond' ? 0 : box.shape === 'pill' && (side === 'L' || side === 'R') ? 0.3 : 0.56;
+  const span = box.shape === 'diamond' ? 0 : box.shape === 'pill' && (side === 'L' || side === 'R') ? 0.42 : 0.56;
   const f = 0.5 + (frac - 0.5) * span;
   if (side === 'L') return { x: box.x, y: box.y + box.h * f };
   if (side === 'R') return { x: box.x + box.w, y: box.y + box.h * f };

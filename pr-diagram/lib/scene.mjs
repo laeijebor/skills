@@ -55,7 +55,7 @@ export function drawNode(scene, { id, x, y, w, h, label, sub, delta, shape = 'ca
   const stroke = lk.stroke || C.cardStroke, fill = lk.fill || C.card;
   const attrs = `fill="${fill}" stroke="${stroke}" stroke-width="${lk.stroke ? 1.6 : 1.2}"${lk.dash ? ` stroke-dasharray="${lk.dash}"` : ''}`;
   let s = `<g${lk.opacity ? ` opacity="${lk.opacity}"` : ''}>`;
-  if (shape === 'diamond') s += `<path d="M${r1(x + w / 2)} ${r1(y)}L${r1(x + w)} ${r1(y + h / 2)}L${r1(x + w / 2)} ${r1(y + h)}L${r1(x)} ${r1(y + h / 2)}z" ${attrs}/>`;
+  if (shape === 'diamond') s += `<path d="M${r1(x + w / 2)} ${r1(y)}L${r1(x + w)} ${r1(y + h / 2)}L${r1(x + w / 2)} ${r1(y + h)}L${r1(x)} ${r1(y + h / 2)}z" ${attrs}/>` + (lk.badge ? `<text class="l" x="${r1(x + w / 2 + 16)}" y="${r1(y + 7)}" font-size="8" style="fill:${lk.tone}">${lk.badge}</text>` : '');
   else s += `<rect x="${r1(x)}" y="${r1(y)}" width="${r1(w)}" height="${r1(h)}" rx="${shape === 'pill' ? r1(h / 2) : big ? 12 : 8}" ${attrs}/>`;
   const strike = lk.strike ? ' text-decoration="line-through" opacity=".65"' : '';
   const room = big ? Infinity : shape === 'diamond' ? w * 0.62 : w - 22;
@@ -136,12 +136,12 @@ export function finalize(scene) {
   const legend = [...scene.used].filter((k) => LEGEND[k]);
   const capLines = doc.caption ? wrap(doc.caption, contentW, 11.5, false) : [];
   if (capLines.length > 3) scene.error(`caption is too long (${doc.caption.length} characters); keep it to one or two sentences`);
-  if (W > 1240) scene.warn(`the diagram is ${W}px wide and will be shrunk to fit a pull request; use fewer columns or shorter labels`);
+  if (W > 1240) scene.warn(`the diagram is ${W}px wide; a pull request shows about 900px, so the text will be small. Use fewer columns, shorter labels, or two diagrams`);
   const bodyTop = HEAD, bodyH = scene.h + 28;
   let fy = bodyTop + bodyH + 22, foot = '';
   if (legend.length || scene.mode === 'new') {
     let lx = PAD;
-    if (scene.mode === 'new') { foot += `<text class="s" x="${lx}" y="${fy}">everything shown is new, except cards marked existing</text>`; lx += textWidth('everything shown is new, except cards marked existing', 10.5, true) + 22; }
+    if (scene.mode === 'new') { const note = scene.used.has('existing') ? 'everything shown is new, except cards marked existing' : 'everything shown is new'; foot += `<text class="s" x="${lx}" y="${fy}">${note}</text>`; lx += textWidth(note, 10.5, true) + 22; }
     for (const k of legend) {
       if (scene.mode === 'new' && k === 'existing') continue;
       const word = scene.mode === 'new' && k === 'added' ? 'connects to existing code' : LEGEND[k][0];
