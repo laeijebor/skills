@@ -131,6 +131,19 @@ test('a node cannot name a zone that is not declared', () => {
   assert.match(errors(validate(doc)).join('\n'), /"core" is not declared/);
 });
 
+test('a new-area sequence still highlights calls into existing participants', () => {
+  const doc = { type: 'sequence', title: 't', participants: [{ id: 'old', label: 'Existing API' }, { id: 'a', label: 'A', delta: 'added' }, { id: 'b', label: 'B', delta: 'added' }, { id: 'c', label: 'C', delta: 'added' }],
+    messages: [{ from: 'a', to: 'b', label: 'inside', delta: 'added' }, { from: 'b', to: 'old', label: 'into old', delta: 'added' }] };
+  const svg = render(doc).svg;
+  assert.equal((svg.match(/class="e e-added flow"/g) || []).length, 1);
+  assert.match(svg, />EXISTING</);
+});
+
+test('a self-loop that would run behind another card is an error', () => {
+  const doc = { type: 'state-machine', title: 't', states: [{ id: 'a', label: 'A', col: 0, row: 0 }, { id: 'b', label: 'B', col: 0, row: 0.5 }], transitions: [{ from: 'a', to: 'b' }, { from: 'b', to: 'b' }] };
+  assert.match(errors(render(doc).issues).join('\n'), /loop on "B" runs behind "A"/);
+});
+
 test('the CLI renders a file and fails on a broken one', () => {
   const out = mkdtempSync(join(tmpdir(), 'pr-diagram-'));
   const bin = join(root, 'bin/pr-diagram.mjs');

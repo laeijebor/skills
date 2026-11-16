@@ -41,7 +41,7 @@ export function routeEdges(scene, edges, opts = {}) {
   for (const e of edges) {
     const a = boxes.get(e.from), b = boxes.get(e.to);
     if (!a || !b) continue;
-    if (a === b) { routed.push({ e, a, b, self: true }); continue; }
+    if (a === b) { routed.push({ e, a, b, self: true, obstacles: [...boxes.values()].filter((o) => o.obstacle && o !== a && !isAncestor(o, a, boxes)) }); continue; }
     if (a.parent && a.parent === b.parent && !a.obstacle && !b.obstacle) { routed.push({ e, a, b, loop: true, obstacles: [], bow: 0 }); continue; }
     const obstacles = [...boxes.values()].filter((o) => o.obstacle && o !== a && o !== b && !isAncestor(o, a, boxes) && !isAncestor(o, b, boxes));
     let best = null;
@@ -88,6 +88,7 @@ export function routeEdges(scene, edges, opts = {}) {
     if (r.self) {
       const x1 = a.x + a.w * 0.32, x2 = a.x + a.w * 0.68, y = a.y;
       r.c = [{ x: x1, y }, { x: x1 - 14, y: y - 44 }, { x: x2 + 14, y: y - 44 }, { x: x2, y }];
+      for (const hit of crossed(samples(r.c), r.obstacles)) scene.error(`the loop on "${a.name || a.id}" runs behind "${hit.name || hit.id}"; leave a full row of space above it (col/row)`);
     } else if (r.loop) {
       // Two rows of one table: out of the right edge and back in.
       const p0 = port(a, 'R'), p3 = port(b, 'R'), k = 56;

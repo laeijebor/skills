@@ -1,5 +1,5 @@
 import { obj, arr, str, enm, req, id, checkShape, indexById, checkRef } from '../shape.mjs';
-import { base, delta } from '../common.mjs';
+import { base, delta, edgeTone } from '../common.mjs';
 import { Scene, pickMode, drawNode, cardSize, look } from '../scene.mjs';
 import { textWidth, esc, C, r1 } from '../theme.mjs';
 
@@ -36,10 +36,11 @@ export function render(doc) {
   ps.forEach((p, i) => drawNode(scene, { id: p.id, x: cx[i] - sizes[i].w / 2, y: 0, w: sizes[i].w, h: cardH, label: p.label, sub: p.sub, delta: p.delta }));
   let y = cardH + 40; const lines = [];
   doc.messages.forEach((m, n) => {
-    const a = cx[index.get(m.from)], b = cx[index.get(m.to)], d = m.delta || 'unchanged';
-    const tone = d === 'unchanged' || (d === 'added' && scene.mode === 'new') ? 'neutral' : d;
+    const a = cx[index.get(m.from)], b = cx[index.get(m.to)];
+    // Same rule as every other type: in a mostly-new diagram, only messages that touch an existing participant stand out.
+    const { tone, flow } = edgeTone(scene, m, (end) => ps[index.get(end)].delta);
     if (tone !== 'neutral') scene.used.add(tone);
-    const cls = `e${tone !== 'neutral' ? ' e-' + tone : ''}${d === 'added' && tone === 'added' ? ' flow' : ''}`, color = tone === 'neutral' ? '#aeb6c4' : C[tone + 'Text'];
+    const cls = `e${tone !== 'neutral' ? ' e-' + tone : ''}${flow ? ' flow' : ''}`, color = tone === 'neutral' ? '#aeb6c4' : C[tone + 'Text'];
     const dash = m.kind === 'return' && tone === 'neutral' ? ' stroke-dasharray="4 4"' : '';
     const numX = Math.min(a, b) - 12;
     if (a === b) {
