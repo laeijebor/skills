@@ -38,6 +38,7 @@ export function validate(doc, issues) {
     (doc.zones || []).forEach((z, i) => { if (seen.has(z.at)) issues.push({ level: 'error', message: `zones[${i}].at: two zones are placed at "${z.at}"` }); seen.add(z.at); });
     doc.nodes.forEach((n, i) => {
       if (n.role) issues.push({ level: 'error', message: `nodes[${i}].role: only the focus layout uses roles` });
+      if (!doc.zones?.length && n.zone) issues.push({ level: 'error', message: `nodes[${i}].zone: "${n.zone}" is not declared; add it to zones, or remove zone from every node` });
       if (doc.zones?.length) { if (!n.zone) issues.push({ level: 'error', message: `nodes[${i}].zone: is required when zones are declared` }); else checkRef(n.zone, zones, `nodes[${i}].zone`, issues, 'zone'); }
     });
     for (const z of doc.zones || []) checkGridFields(doc.nodes.filter((n) => n.zone === z.id), `nodes in zone "${z.id}"`, issues);

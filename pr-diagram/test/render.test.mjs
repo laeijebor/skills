@@ -118,6 +118,19 @@ test('small measured values keep their digits', () => {
   assert.match(out.svg, /0\.004 s/);
 });
 
+test('a removed decision keeps its removed branches', () => {
+  const doc = { type: 'decision-flow', title: 't', nodes: [{ id: 's', kind: 'start', label: 'Start' }, { id: 'd', kind: 'decision', label: 'Old check?', delta: 'removed' }, { id: 'a', label: 'A', delta: 'removed' }, { id: 'b', label: 'B' }],
+    edges: [{ from: 's', to: 'd', delta: 'removed' }, { from: 'd', to: 'a', label: 'yes', delta: 'removed' }, { from: 'd', to: 'b', label: 'no', delta: 'removed' }, { from: 's', to: 'b', delta: 'added' }] };
+  assert.deepEqual(errors(render(doc).issues), []);
+  doc.nodes[1].delta = 'changed';
+  assert.match(errors(validate(doc)).join('\n'), /two outgoing edges that still exist/);
+});
+
+test('a node cannot name a zone that is not declared', () => {
+  const doc = { type: 'architecture', title: 't', nodes: [{ id: 'a', label: 'A', zone: 'core' }, { id: 'b', label: 'B', zone: 'core' }], edges: [{ from: 'a', to: 'b' }] };
+  assert.match(errors(validate(doc)).join('\n'), /"core" is not declared/);
+});
+
 test('the CLI renders a file and fails on a broken one', () => {
   const out = mkdtempSync(join(tmpdir(), 'pr-diagram-'));
   const bin = join(root, 'bin/pr-diagram.mjs');

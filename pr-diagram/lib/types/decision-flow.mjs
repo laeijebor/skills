@@ -25,7 +25,12 @@ export function validate(doc, issues) {
   checkGridFields(doc.nodes, 'nodes', issues);
   checkEdges(doc.edges, 'edges', issues);
   doc.edges.forEach((e, i) => { checkRef(e.from, nodes, `edges[${i}].from`, issues, 'node'); checkRef(e.to, nodes, `edges[${i}].to`, issues, 'node'); });
-  doc.nodes.forEach((n, i) => { if (n.kind === 'decision' && doc.edges.filter((e) => e.from === n.id && e.delta !== 'removed').length < 2) issues.push({ level: 'error', message: `nodes[${i}]: the decision "${n.label}" needs at least two outgoing edges that still exist (one per answer)` }); });
+  doc.nodes.forEach((n, i) => {
+    if (n.kind !== 'decision') return;
+    // A decision that still exists needs two live answers; one that was removed keeps its old, removed, branches.
+    const out = doc.edges.filter((e) => e.from === n.id), gone = n.delta === 'removed';
+    if ((gone ? out : out.filter((e) => e.delta !== 'removed')).length < 2) issues.push({ level: 'error', message: `nodes[${i}]: the decision "${n.label}" needs at least two outgoing edges${gone ? '' : ' that still exist'} (one per answer)` });
+  });
 }
 
 export function render(doc) {
