@@ -55,6 +55,7 @@ export function routeEdges(scene, edges, opts = {}) {
       if (bx * (ca.x - cb.x) + by * (ca.y - cb.y) <= 0) cost += 240;
       // Entering its own endpoints' bodies (a curve doubling back through the card it left).
       if (pts.slice(4, -4).some((p) => inside(p, a, -2) || inside(p, b, -2))) cost += 5000;
+      if (pts.some((p) => p.x < -8 || p.y < -8)) cost += 3000;
       const horizontal = (sa === 'L' || sa === 'R') && (sb === 'L' || sb === 'R'), vertical = (sa === 'T' || sa === 'B') && (sb === 'T' || sb === 'B');
       if (opts.prefer === 'h' && !horizontal) cost += 18;
       if (opts.prefer === 'v' && !vertical) cost += 18;
@@ -93,6 +94,7 @@ export function routeEdges(scene, edges, opts = {}) {
       r.c = [p0, { x: p0.x + k, y: p0.y }, { x: p3.x + k, y: p3.y }, p3];
     } else {
       r.c = curve(port(a, r.sa, r.fa), r.sa, port(b, r.sb, r.fb), r.sb, r.bow);
+      if (samples(r.c).some((p) => p.x < -8 || p.y < -8)) scene.error(`the edge ${e.from} → ${e.to} has to leave the frame to get around another card; move a card (col/row) or reorder them so the path is clear`);
       for (const hit of crossed(samples(r.c), r.obstacles)) scene.error(`the edge ${e.from} → ${e.to} runs behind "${hit.name || hit.id}"; move a card (col/row) or change the layout so the path is clear`);
     }
     const c = r.c;

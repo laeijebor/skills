@@ -115,9 +115,11 @@ export function render(doc) {
     }));
     const pulled = z.nodes.filter((n) => pull.get(n.id) !== null);
     if (!pulled.length) continue;
-    const order = [...z.nodes].sort((a, b) => (pull.get(a.id) ?? Infinity) - (pull.get(b.id) ?? Infinity));
-    order.forEach((n, i) => { z.grid.cells.get(n.id).col = i; });
     const target = pulled.reduce((sum, n) => sum + pull.get(n.id), 0) / pulled.length;
+    // Cards with no connection outside the zone go to the far side, out of the way of the ones that have.
+    const idle = target > z.x + z.W / 2 ? -Infinity : Infinity;
+    const order = [...z.nodes].sort((a, b) => (pull.get(a.id) ?? idle) - (pull.get(b.id) ?? idle));
+    order.forEach((n, i) => { z.grid.cells.get(n.id).col = i; });
     const at = pulled.map((n) => order.indexOf(n)), mid = (Math.min(...at) + Math.max(...at)) / 2;
     z.ox = Math.min(z.x + z.W - z.pad - z.iw, Math.max(z.x + z.pad, target - z.cellW / 2 - mid * (z.cellW + z.gapX)));
     place(z);
