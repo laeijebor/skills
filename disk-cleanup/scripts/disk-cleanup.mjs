@@ -390,7 +390,7 @@ async function audit(opts) {
 
     if (added?.action === 'remove-worktree' && state.sessions.length) {
       // apply archives these through Commando, which removes the worktree and keeps the branch for Restore.
-      added.title += ` → archive session ${state.sessions.map((session) => `"${session.name}"`).join(', ')} (branch kept)`
+      added.title += ` → archive session ${state.sessions.filter((session) => !/^(native_app|tilt)-/.test(session.name)).map((session) => `"${session.name}"`).join(', ') || '(helpers only)'} (branch kept)`
       added.deleteBranch = false
     }
 
@@ -569,19 +569,29 @@ function liveRecordedSessions(item, ctx) {
 // A worktree with sessions goes through Commando's Archive, which removes it (committing uncommitted work)
 // and keeps the branch so Restore can check it out again; this script deletes neither.
 async function archiveWorktreeSessions(item, sessions, ctx) {
-  const names = sessions.map((session) => `"${session.name}"`).join(', ')
+  // Commando's generated helpers (tilt-<worktree>, native_app-<worktree>) close with the session they support.
+  const helper = new RegExp(`^(native_app|tilt)-${basename(item.path).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
+  const owners = sessions.filter((session) => !helper.test(session.name))
+  if (!owners.length) throw new Error(`only helper session(s) ${sessions.map((session) => `"${session.name}"`).join(', ')} use it; close them in Commando first`)
+  const names = owners.map((session) => `"${session.name}"`).join(', ')
   if (ctx.dryRun) return `would archive ${names} in Commando (it commits uncommitted work and removes the worktree; branch ${item.branch ?? 'kept'} kept)`
   const archived = []
   let kept
-  for (const session of sessions) {
-    const result = await archiveInCommando(session, ctx.socket)
+  for (const session of owners) {
+    try {
+      const result = await archiveInCommando(session, ctx.socket)
+      kept ??= result.worktreeKept
+    } catch (error) {
+      if (!archived.length) throw error
+      kept = error.message
+      break
+    }
     archived.push(`"${session.name}"`)
     ctx.restore.push(`Commando → Archived → "${session.name}" → Restore   # recreates ${item.path}`)
-    kept ??= result.worktreeKept
   }
   if (existsSync(item.path)) return `archived ${archived.join(', ')}; worktree kept${kept ? `: ${kept}` : ''}`
   ctx.removedDeps = true
-  return `archived ${archived.join(', ')}; Commando removed the worktree, branch kept`
+  return `archived ${archived.join(', ')}; Commando removed the worktree, branch kept${kept ? ` (${kept})` : ''}`
 }
 
 const actions = {
