@@ -139,6 +139,8 @@ terminal, give the path as text.
 
 ## 5. Order the description
 
+Use this order unless the repository sets its own (see the next section):
+
 1. One sentence on why the change exists.
 2. The diagram(s).
 3. Proof that it works: tests, a screenshot, a recording.
@@ -149,6 +151,28 @@ terminal, give the path as text.
 
 When a later push changes what the diagram shows, re-render and replace the
 image. Skip that for pushes that do not.
+
+## The repository's PR rules come first
+
+Many repositories have their own rules for pull requests, in `AGENTS.md`,
+`CLAUDE.md`, a PR template or contribution docs. Read them before writing the
+description. The diagram is added to what they require; it never replaces or
+reorders it.
+
+- Keep the required title format (for example conventional commits) and every
+  required section, checklist and template heading, in the repository's order.
+  Put the diagram straight after the opening summary, or in the template's
+  description section when there is one.
+- Lines the repository says must close the description stay last, in the
+  order it gives: tag lines, then ticket lines such as `Fixes ABC-123`. The
+  Commando marker is an invisible comment; put it above those lines, not
+  after them.
+- Follow the repository's rules on when to push and open a PR. This skill
+  never makes pushing or opening one more urgent: draw the diagram locally,
+  and attach it when the PR is created or updated under those rules.
+- `.pr-diagram/` is ignored through git's local exclude file, so nothing
+  about the diagram is committed and no repository file changes.
+
 
 ## Hard rules
 
