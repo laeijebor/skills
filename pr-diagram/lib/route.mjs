@@ -42,7 +42,7 @@ export function routeEdges(scene, edges, opts = {}) {
     const a = boxes.get(e.from), b = boxes.get(e.to);
     if (!a || !b) continue;
     if (a === b) { routed.push({ e, a, b, self: true, obstacles: [...boxes.values()].filter((o) => o.obstacle && o !== a && !isAncestor(o, a, boxes)) }); continue; }
-    if (a.parent && a.parent === b.parent && !a.obstacle && !b.obstacle) { routed.push({ e, a, b, loop: true, obstacles: [], bow: 0 }); continue; }
+    if (a.parent && a.parent === b.parent && !a.obstacle && !b.obstacle) { routed.push({ e, a, b, loop: true, obstacles: [...boxes.values()].filter((o) => o.obstacle && o.id !== a.parent), bow: 0 }); continue; }
     const obstacles = [...boxes.values()].filter((o) => o.obstacle && o !== a && o !== b && !isAncestor(o, a, boxes) && !isAncestor(o, b, boxes));
     let best = null;
     for (const sa of e.fromSides || 'LRTB') for (const sb of e.toSides || 'LRTB') {
@@ -93,6 +93,7 @@ export function routeEdges(scene, edges, opts = {}) {
       // Two rows of one table: out of the right edge and back in.
       const p0 = port(a, 'R'), p3 = port(b, 'R'), k = 56;
       r.c = [p0, { x: p0.x + k, y: p0.y }, { x: p3.x + k, y: p3.y }, p3];
+      for (const hit of crossed(samples(r.c), r.obstacles)) scene.error(`the loop ${e.from} → ${e.to} runs behind "${hit.name || hit.id}"; leave more space to the right of the table (col/row)`);
     } else {
       r.c = curve(port(a, r.sa, r.fa), r.sa, port(b, r.sb, r.fb), r.sb, r.bow);
       if (samples(r.c).some((p) => p.x < -8 || p.y < -8)) scene.error(`the edge ${e.from} → ${e.to} has to leave the frame to get around another card; move a card (col/row) or reorder them so the path is clear`);

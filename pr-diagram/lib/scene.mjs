@@ -130,23 +130,29 @@ export function finalize(scene) {
   const title = doc.title || '';
   const chipW = capWidth(scene.typeLabel) + 18;
   const headW = textWidth(title, 17, false, true) + 14 + chipW;
-  const contentW = Math.max(scene.w, 520, headW);
+  // The legend is laid out first: a narrow diagram must still be wide enough to show all of it.
+  const legend = [];
+  if (scene.mode === 'new') legend.push({ text: scene.used.has('existing') ? 'everything shown is new, except cards marked existing' : 'everything shown is new' });
+  for (const k of scene.used) {
+    if (!LEGEND[k] || (scene.mode === 'new' && k === 'existing')) continue;
+    legend.push({ text: scene.mode === 'new' && k === 'added' ? 'connects to existing code' : LEGEND[k][0], dot: LEGEND[k][1] });
+  }
+  const entryW = (e) => (e.dot ? 13 : 0) + textWidth(e.text, 10.5, true);
+  const legendW = legend.reduce((sum, e) => sum + entryW(e), 0) + Math.max(0, legend.length - 1) * 20;
+  const contentW = Math.max(scene.w, 520, headW, legendW);
   const W = Math.ceil(contentW + PAD * 2);
   const dx = PAD + (contentW - scene.w) / 2;
-  const legend = [...scene.used].filter((k) => LEGEND[k]);
   const capLines = doc.caption ? wrap(doc.caption, contentW, 11.5, false) : [];
   if (capLines.length > 3) scene.error(`caption is too long (${doc.caption.length} characters); keep it to one or two sentences`);
   if (W > 1240) scene.warn(`the diagram is ${W}px wide; a pull request shows about 900px, so the text will be small. Use fewer columns, shorter labels, or two diagrams`);
   const bodyTop = HEAD, bodyH = scene.h + 28;
   let fy = bodyTop + bodyH + 22, foot = '';
-  if (legend.length || scene.mode === 'new') {
+  if (legend.length) {
     let lx = PAD;
-    if (scene.mode === 'new') { const note = scene.used.has('existing') ? 'everything shown is new, except cards marked existing' : 'everything shown is new'; foot += `<text class="s" x="${lx}" y="${fy}">${note}</text>`; lx += textWidth(note, 10.5, true) + 22; }
-    for (const k of legend) {
-      if (scene.mode === 'new' && k === 'existing') continue;
-      const word = scene.mode === 'new' && k === 'added' ? 'connects to existing code' : LEGEND[k][0];
-      foot += `<circle cx="${r1(lx + 4)}" cy="${fy - 3.5}" r="4" fill="${LEGEND[k][1]}"/><text class="s" x="${r1(lx + 13)}" y="${fy}">${word}</text>`;
-      lx += 13 + textWidth(word, 10.5, true) + 18;
+    for (const e of legend) {
+      if (e.dot) foot += `<circle cx="${r1(lx + 4)}" cy="${fy - 3.5}" r="4" fill="${e.dot}"/>`;
+      foot += `<text class="s" x="${r1(lx + (e.dot ? 13 : 0))}" y="${fy}">${e.text}</text>`;
+      lx += entryW(e) + 20;
     }
     fy += 20;
   }

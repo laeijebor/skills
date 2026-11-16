@@ -144,6 +144,22 @@ test('a self-loop that would run behind another card is an error', () => {
   assert.match(errors(render(doc).issues).join('\n'), /loop on "B" runs behind "A"/);
 });
 
+test('a loop between two fields may not run behind the next table', () => {
+  const entity = (id, col) => ({ id, name: id, col, row: 0, fields: [{ name: 'id' }, { name: 'parent_id' }] });
+  const doc = { type: 'data-model', title: 't', entities: [entity('a', 0), entity('b', 0.75)], relations: [{ from: 'a.parent_id', to: 'a.id' }] };
+  assert.match(errors(render(doc).issues).join('\n'), /runs behind "b"/);
+});
+
+test('the legend always fits inside a narrow diagram', () => {
+  const doc = { type: 'decision-flow', title: 't', nodes: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B', delta: 'added' }, { id: 'c', label: 'C', delta: 'added' }, { id: 'd', label: 'D', delta: 'added' }],
+    edges: [{ from: 'a', to: 'b', delta: 'added' }, { from: 'b', to: 'c', delta: 'changed' }, { from: 'c', to: 'd', delta: 'added' }] };
+  const out = render(doc);
+  assert.deepEqual(errors(out.issues), []);
+  const xs = [...out.svg.matchAll(/<text class="s" x="([\d.]+)" y="[\d.]+">(connects to existing code|changed|everything[^<]*)</g)].map((m) => Number(m[1]) + m[2].length * 6.5);
+  assert.equal(xs.length, 3);
+  assert.ok(Math.max(...xs) <= out.width, `legend ends at ${Math.max(...xs)} in a ${out.width}px diagram`);
+});
+
 test('the CLI renders a file and fails on a broken one', () => {
   const out = mkdtempSync(join(tmpdir(), 'pr-diagram-'));
   const bin = join(root, 'bin/pr-diagram.mjs');
