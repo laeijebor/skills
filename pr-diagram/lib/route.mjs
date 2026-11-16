@@ -6,17 +6,19 @@ const SIDES = { L: [-1, 0], R: [1, 0], T: [0, -1], B: [0, 1] };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 function port(box, side, frac = 0.5) {
-  const span = box.shape === 'diamond' || (box.shape === 'pill' && (side === 'L' || side === 'R')) ? 0 : 0.56;
+  const span = box.shape === 'diamond' ? 0 : box.shape === 'pill' && (side === 'L' || side === 'R') ? 0.3 : 0.56;
   const f = 0.5 + (frac - 0.5) * span;
   if (side === 'L') return { x: box.x, y: box.y + box.h * f };
   if (side === 'R') return { x: box.x + box.w, y: box.y + box.h * f };
   if (side === 'T') return { x: box.x + box.w * f, y: box.y };
   return { x: box.x + box.w * f, y: box.y + box.h };
 }
-function curve(p0, sa, p3, sb) {
-  const k = clamp(Math.hypot(p3.x - p0.x, p3.y - p0.y) * 0.42, 22, 130);
+// bow: sideways push of the middle of the curve, so two edges running opposite ways between one pair do not overlap.
+function curve(p0, sa, p3, sb, bow = 0) {
+  const d = Math.hypot(p3.x - p0.x, p3.y - p0.y) || 1, k = clamp(d * 0.42, 22, 130);
   const [ax, ay] = SIDES[sa], [bx, by] = SIDES[sb];
-  return [p0, { x: p0.x + ax * k, y: p0.y + ay * k }, { x: p3.x + bx * k, y: p3.y + by * k }, p3];
+  const nx = (-(p3.y - p0.y) / d) * bow, ny = ((p3.x - p0.x) / d) * bow;
+  return [p0, { x: p0.x + ax * k + nx, y: p0.y + ay * k + ny }, { x: p3.x + bx * k + nx, y: p3.y + by * k + ny }, p3];
 }
 export function at(c, t) {
   const u = 1 - t, a = u * u * u, b = 3 * u * u * t, d = 3 * u * t * t, e = t * t * t;
@@ -57,17 +59,26 @@ export function routeEdges(scene, edges, opts = {}) {
       if (opts.prefer === 'v' && !vertical) cost += 18;
       if (!best || cost < best.cost) best = { cost, sa, sb };
     }
-    routed.push({ e, a, b, obstacles, ...best });
+    const twin = edges.some((o) => o.from === e.to && o.to === e.from);
+    // The return edge of a pair mirrors its partner's sides, so the two form a lens instead of crossing.
+    const partner = routed.find((r) => !r.self && r.e.from === e.to && r.e.to === e.from);
+    if (partner) best = { sa: partner.sb, sb: partner.sa };
+    routed.push({ e, a, b, obstacles, bow: twin ? 26 : 0, ...best });
   }
   // Spread several edges on one side so they do not share a point.
   const slots = new Map();
-  const slot = (box, side, other, r, end) => { const k = `${box.id}:${side}`; if (!slots.has(k)) slots.set(k, []); slots.get(k).push({ other, r, end }); };
+  const slot = (box, side, other, r, end) => { const k = `${box.id}:${side}`; if (!slots.has(k)) slots.set(k, []); slots.get(k).push({ other, r, end, pair: r.bow ? [r.a.id, r.b.id].sort().join('|') : null }); };
   for (const r of routed) if (!r.self) {
     const axis = (side) => (side === 'L' || side === 'R' ? 'y' : 'x');
     const mid = (b) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
     slot(r.a, r.sa, mid(r.b)[axis(r.sa)], r, 'fa'); slot(r.b, r.sb, mid(r.a)[axis(r.sb)], r, 'fb');
   }
-  for (const list of slots.values()) { list.sort((p, q) => p.other - q.other); list.forEach((s, i) => { s.r[s.end] = (i + 1) / (list.length + 1); }); }
+  // A pair of opposite edges shares one point and bows apart; giving each its own point would make them cross.
+  for (const list of slots.values()) {
+    list.sort((p, q) => p.other - q.other);
+    const groups = []; for (const s of list) { const g = s.pair && groups.find((x) => x.pair === s.pair); if (g) g.items.push(s); else groups.push({ pair: s.pair, items: [s] }); }
+    groups.forEach((g, i) => g.items.forEach((s) => { s.r[s.end] = (i + 1) / (groups.length + 1); }));
+  }
 
   for (const r of routed) {
     const { e, a, b } = r, tone = e.tone || 'neutral';
@@ -76,7 +87,7 @@ export function routeEdges(scene, edges, opts = {}) {
       const x1 = a.x + a.w * 0.32, x2 = a.x + a.w * 0.68, y = a.y;
       r.c = [{ x: x1, y }, { x: x1 - 14, y: y - 44 }, { x: x2 + 14, y: y - 44 }, { x: x2, y }];
     } else {
-      r.c = curve(port(a, r.sa, r.fa), r.sa, port(b, r.sb, r.fb), r.sb);
+      r.c = curve(port(a, r.sa, r.fa), r.sa, port(b, r.sb, r.fb), r.sb, r.bow);
       for (const hit of crossed(samples(r.c), r.obstacles)) scene.error(`the edge ${e.from} → ${e.to} runs behind "${hit.name || hit.id}"; move a card (col/row) or change the layout so the path is clear`);
     }
     const c = r.c;

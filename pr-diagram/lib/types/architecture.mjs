@@ -1,7 +1,7 @@
 import { obj, arr, str, int, num, enm, req, id, checkShape, indexById, checkRef } from '../shape.mjs';
 import { base, delta, edgeFields, edgeTone, CIRCLED } from '../common.mjs';
 import { Scene, pickMode, drawNode, drawZone, cardSize, caption, wrap, capWidth } from '../scene.mjs';
-import { routeEdges } from '../route.mjs';
+import { routeEdges, at } from '../route.mjs';
 import { gridPositions, checkGridFields } from '../grid.mjs';
 import { textWidth, esc, C } from '../theme.mjs';
 
@@ -13,7 +13,7 @@ export const question = 'Which parts talk to each other differently?';
 const AT = { 'top-left': [0, 0], top: [1, 0], 'top-right': [2, 0], left: [0, 1], center: [1, 1], right: [2, 1], 'bottom-left': [0, 2], bottom: [1, 2], 'bottom-right': [2, 2] };
 const ROLE_ZONES = { caller: ['top', 'Who calls it'], focus: ['center', ''], callee: ['bottom', 'What it uses'], sibling: ['right', 'Alongside'] };
 const part = obj({ id: req(id()), label: req(str({ max: 22 })), sub: str({ max: 20 }), delta: delta() });
-const spec = obj({
+export const spec = obj({
   ...base(name),
   layout: enm(['zones', 'focus']),
   zones: arr(obj({ id: req(id()), label: req(str({ max: 44 })), at: req(enm(Object.keys(AT))) }), { max: 9 }),
@@ -74,9 +74,10 @@ export function render(doc) {
     const cellW = Math.max(...[...sizes.values()].map((s) => s.w)), cellH = Math.max(...[...sizes.values()].map((s) => s.h));
     const longest = Math.max(0, ...inner.filter((e) => e.label && e.step === undefined).map((e) => textWidth(e.label, 10, true)));
     const gapX = Math.min(190, Math.max(64, longest + 40)), gapY = 56;
-    const padTop = z.label ? 38 : z.frame ? 18 : 0, pad = z.frame ? 18 : 0;
+    const below = !z.frame && z.at.startsWith('bottom'); // a frameless bottom row is captioned underneath, clear of incoming edges
+    const padTop = z.label && !below ? 38 : z.frame ? 18 : 0, pad = z.frame ? 18 : 0, padBottom = pad + (below && z.label ? 26 : 0);
     const iw = (grid.cols - 1) * (cellW + gapX) + cellW, ih = (grid.rows - 1) * (cellH + gapY) + cellH;
-    zones.push({ ...z, nodes, grid, sizes, cellW, cellH, gapX, gapY, pad, padTop, iw, ih, w: Math.max(iw + pad * 2, z.label ? capWidth(z.label) + 28 : 0), h: ih + padTop + pad, c0: AT[z.at][0], c1: AT[z.at][0], r: AT[z.at][1] });
+    zones.push({ ...z, nodes, grid, sizes, cellW, cellH, gapX, gapY, pad, padTop, iw, ih, below, w: Math.max(iw + pad * 2, z.label ? capWidth(z.label) * (z.frame && grid.cols === 1 ? 2 : 1) + (z.frame && grid.cols === 1 ? 48 : 28) : 0), h: ih + padTop + padBottom, c0: AT[z.at][0], c1: AT[z.at][0], r: AT[z.at][1] });
   }
   // 2. Let a zone stretch sideways into empty cells of its row, so a bottom band can run the full width.
   const taken = new Set(zones.map((z) => `${z.c0},${z.r}`));
@@ -122,25 +123,35 @@ export function render(doc) {
   }
   // 5. Draw.
   for (const z of zones) {
-    drawZone(scene, { x: z.x, y: z.y, w: z.W, h: z.h, label: z.frame ? z.label : '', frame: z.frame });
-    if (!z.frame && z.label) caption(scene, z.x + z.W / 2, z.y + 12, z.label, 'middle');
+    drawZone(scene, { x: z.x, y: z.y, w: z.W, h: z.h, frame: z.frame });
+    if (z.frame && z.label) scene.labels.push((z.capRect = { x: z.x + 11, y: z.y + 11, w: capWidth(z.label) + 6, h: 15 }));
+    if (!z.frame && z.label) caption(scene, z.x + z.W / 2, z.below ? z.y + z.h - 4 : z.y + 12, z.label, 'middle');
     const ox = z.ox, oy = z.y + z.padTop;
     for (const n of z.nodes) {
       const cell = z.grid.cells.get(n.id), size = z.sizes.get(n.id);
       const w = n.parts ? size.w : z.cellW, nx = ox + cell.col * (z.cellW + z.gapX) + (z.cellW - w) / 2, ny = oy + cell.row * (z.cellH + z.gapY) + (z.cellH - size.h) / 2;
-      drawNode(scene, { id: n.id, x: nx, y: ny, w, h: size.h, label: n.label, sub: n.parts ? undefined : n.sub, delta: n.delta, big: !!n.parts });
+      drawNode(scene, { id: n.id, x: nx, y: ny, w, h: size.h, label: n.label, sub: n.sub, delta: n.delta, big: !!n.parts });
       if (n.parts) {
-        const pw = (size.w - 28 - (n.parts.length - 1) * 10) / n.parts.length;
-        n.parts.forEach((p, i) => drawNode(scene, { id: `${n.id}.${p.id}`, x: nx + 14 + i * (pw + 10), y: ny + 42, w: pw, h: 50, label: p.label, sub: p.sub, delta: p.delta, parent: n.id, shape: 'pill-card' }));
+        // Name on the left, parts in a row on the right: edges reach the parts from above and below without crossing the name.
+        const side = size.side, pw = (size.w - side - 14 - (n.parts.length - 1) * 10) / n.parts.length;
+        n.parts.forEach((p, i) => drawNode(scene, { id: `${n.id}.${p.id}`, x: nx + side + i * (pw + 10), y: ny + 14, w: pw, h: size.h - 28, label: p.label, sub: p.sub, delta: p.delta, parent: n.id, shape: 'part' }));
       }
     }
   }
   const deltaOf = (end) => (nodeById.get(owner.get(end)) || {}).delta;
   const firstStep = new Map();
-  routeEdges(scene, edges.map((e) => {
+  const routed = routeEdges(scene, edges.map((e) => {
     if (e.step !== undefined && !firstStep.has(e.step)) firstStep.set(e.step, e.label);
     return { from: e.from, to: e.to, ...(e.step !== undefined ? { step: e.step } : { label: e.label }), ...edgeTone(scene, e, deltaOf) };
   }));
+  // Zone names go top-left, or top-right when an edge runs through the left spot.
+  for (const z of zones) {
+    if (!z.capRect) continue;
+    const hit = (rect) => routed.some((r) => Array.from({ length: 41 }, (_, i) => at(r.c, i / 40)).some((p) => p.x > rect.x && p.x < rect.x + rect.w && p.y > rect.y && p.y < rect.y + rect.h));
+    const right = { ...z.capRect, x: z.x + z.W - 11 - z.capRect.w };
+    const useRight = hit(z.capRect) && !hit(right);
+    scene.add(`<text class="cap" x="${useRight ? z.x + z.W - 14 : z.x + 14}" y="${z.y + 22}"${useRight ? ' text-anchor="end"' : ''}>${esc(z.label.toUpperCase())}</text>`);
+  }
   // 6. Legend for numbered steps.
   if (firstStep.size) {
     const text = [...firstStep.entries()].sort((a, b) => a[0] - b[0]).map(([n, t]) => `${CIRCLED(n)} ${t}`).join('  ·  ');
@@ -152,6 +163,6 @@ export function render(doc) {
 
 function nodeSize(n) {
   if (!n.parts) return cardSize(n);
-  const pw = Math.max(96, ...n.parts.map((p) => cardSize(p).w - 20));
-  return { w: Math.max(n.parts.length * pw + (n.parts.length - 1) * 10 + 28, textWidth(n.label, 15, false, true) + 100), h: 108 };
+  const pw = Math.max(100, ...n.parts.map((p) => cardSize(p).w)), side = Math.max(textWidth(n.label, 15, false, true), n.sub ? textWidth(n.sub, 10.5, true) : 0, 70) + 34;
+  return { w: side + n.parts.length * pw + (n.parts.length - 1) * 10 + 14, h: 86, side };
 }

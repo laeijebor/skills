@@ -1,0 +1,80 @@
+{
+  "type": "state-machine",
+  "title": "Sessions can wait for an answer",
+  "caption": "A question used to leave the session stuck in running. It now has its own state, and the timeout back to idle is gone.",
+  "states": [
+    {
+      "id": "idle",
+      "label": "idle",
+      "initial": true
+    },
+    {
+      "id": "running",
+      "label": "running"
+    },
+    {
+      "id": "waiting",
+      "label": "waiting",
+      "delta": "added"
+    },
+    {
+      "id": "done",
+      "label": "done"
+    },
+    {
+      "id": "failed",
+      "label": "failed"
+    },
+    {
+      "id": "closed",
+      "label": "closed",
+      "final": true
+    }
+  ],
+  "transitions": [
+    {
+      "from": "idle",
+      "to": "running",
+      "label": "start"
+    },
+    {
+      "from": "running",
+      "to": "waiting",
+      "label": "asks a question",
+      "delta": "added"
+    },
+    {
+      "from": "waiting",
+      "to": "running",
+      "label": "user answers",
+      "delta": "added"
+    },
+    {
+      "from": "running",
+      "to": "done",
+      "label": "exit 0"
+    },
+    {
+      "from": "running",
+      "to": "failed",
+      "label": "exit ≠ 0"
+    },
+    {
+      "from": "failed",
+      "to": "running",
+      "label": "retry (max 3)",
+      "delta": "changed"
+    },
+    {
+      "from": "done",
+      "to": "closed",
+      "label": "close"
+    },
+    {
+      "from": "running",
+      "to": "idle",
+      "label": "timeout",
+      "delta": "removed"
+    }
+  ]
+}

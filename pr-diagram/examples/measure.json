@@ -1,0 +1,50 @@
+{
+  "type": "measure",
+  "title": "Cold start no longer waits for GitHub",
+  "caption": "PR badges load after first paint, and the session tree is read from a cache.",
+  "metric": "Time to first paint, cold start",
+  "unit": "ms",
+  "source": "Median of 20 runs on an M2 Air with 14 sessions, measured with scripts/bench-startup.ts",
+  "bars": [
+    {
+      "label": "Before",
+      "segments": [
+        {
+          "label": "tmux",
+          "value": 120
+        },
+        {
+          "label": "load session tree",
+          "value": 480
+        },
+        {
+          "label": "fetch PR badges",
+          "value": 900,
+          "delta": "removed"
+        },
+        {
+          "label": "render",
+          "value": 200
+        }
+      ]
+    },
+    {
+      "label": "After",
+      "segments": [
+        {
+          "label": "tmux",
+          "value": 120
+        },
+        {
+          "label": "tree, cached",
+          "value": 90,
+          "delta": "changed"
+        },
+        {
+          "label": "render",
+          "value": 200
+        }
+      ]
+    }
+  ]
+}

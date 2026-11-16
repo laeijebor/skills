@@ -1,0 +1,100 @@
+{
+  "type": "before-after",
+  "title": "One retry helper for every GitHub call",
+  "caption": "Three retry implementations become one. SessionTree gains the retry it never had.",
+  "before": {
+    "nodes": [
+      {
+        "id": "chat-list",
+        "label": "ChatList",
+        "sub": "own retry loop",
+        "col": 0,
+        "row": 0
+      },
+      {
+        "id": "quick-look",
+        "label": "PrQuickLook",
+        "sub": "own retry, no backoff",
+        "col": 0,
+        "row": 1
+      },
+      {
+        "id": "tree",
+        "label": "SessionTree",
+        "sub": "no retry",
+        "col": 0,
+        "row": 2
+      },
+      {
+        "id": "github",
+        "label": "GitHub API",
+        "sub": "rate-limited",
+        "col": 2,
+        "row": 1
+      }
+    ],
+    "edges": [
+      {
+        "from": "chat-list",
+        "to": "github"
+      },
+      {
+        "from": "quick-look",
+        "to": "github"
+      },
+      {
+        "from": "tree",
+        "to": "github"
+      }
+    ]
+  },
+  "after": {
+    "nodes": [
+      {
+        "id": "chat-list",
+        "label": "ChatList",
+        "sub": "calls withRetry"
+      },
+      {
+        "id": "quick-look",
+        "label": "PrQuickLook",
+        "sub": "calls withRetry"
+      },
+      {
+        "id": "tree",
+        "label": "SessionTree",
+        "sub": "calls withRetry"
+      },
+      {
+        "id": "with-retry",
+        "label": "withRetry",
+        "sub": "backoff, 3 tries",
+        "col": 1,
+        "row": 1
+      },
+      {
+        "id": "github",
+        "label": "GitHub API",
+        "sub": "rate-limited"
+      }
+    ],
+    "edges": [
+      {
+        "from": "chat-list",
+        "to": "with-retry"
+      },
+      {
+        "from": "quick-look",
+        "to": "with-retry"
+      },
+      {
+        "from": "tree",
+        "to": "with-retry"
+      },
+      {
+        "from": "with-retry",
+        "to": "github"
+      }
+    ]
+  }
+}

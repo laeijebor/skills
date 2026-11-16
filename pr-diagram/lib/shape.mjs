@@ -64,3 +64,16 @@ export function indexById(list, path, issues) {
 export function checkRef(value, map, path, issues, what = 'id') {
   if (typeof value === 'string' && !map.has(value)) issues.push({ level: 'error', message: `${path}: "${value}" is not a declared ${what} (declared: ${[...map.keys()].slice(0, 12).join(', ') || 'none'})` });
 }
+
+// A readable field list for one spec, printed by `pr-diagram fields <type>`.
+export function describe(spec, indent = '') {
+  const lines = [];
+  for (const [key, f] of Object.entries(spec.fields)) {
+    const inner = f.t === 'arr' ? f.item : f;
+    const kind = f.t === 'arr' ? `list of ${inner.t === 'obj' ? 'objects' : inner.t === 'str' ? 'strings' : inner.t}` : f.t === 'enum' ? f.values.map((v) => JSON.stringify(v)).join(' | ') : f.t === 'str' ? 'string' : f.t === 'int' ? 'whole number' : f.t === 'num' ? 'number' : f.t === 'bool' ? 'true | false' : 'object';
+    const limits = [f.required ? 'required' : 'optional', f.t === 'arr' && (f.min || f.max) ? `${f.min ?? 0} to ${f.max ?? 'any'} items` : '', inner.t === 'str' && inner.max ? `up to ${inner.max} characters` : '', (f.t === 'int' || f.t === 'num') && f.max !== undefined ? `${f.min ?? 0} to ${f.max}` : ''].filter(Boolean).join(', ');
+    lines.push(`${indent}${key}: ${kind} (${limits})`);
+    if (inner.t === 'obj') lines.push(...describe(inner, indent + '  '));
+  }
+  return lines;
+}

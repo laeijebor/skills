@@ -3,20 +3,22 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { TYPES, validate, render } from '../lib/index.mjs';
+import { TYPES, render } from '../lib/index.mjs';
+import { describe } from '../lib/shape.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const USAGE = `pr-diagram: draw a code change as an animated SVG
 
   pr-diagram types                         which diagram answers which reviewer question
   pr-diagram example <type>                a complete document of that type, to adapt
+  pr-diagram fields <type>                 every field of that type, with its limits
   pr-diagram validate <file.json...>       check documents, including labels that would be cut off or overlap
   pr-diagram render <file.json...> [--out <dir>] [--png] [--draft]
                                            write <name>.svg next to each document (or into --out);
                                            --png also writes a preview image with headless Chrome;
                                            --draft still draws a document whose layout has errors, so you can see them
 
-A document is one JSON object with a "type". Field reference: references/document.md`;
+A document is one JSON object with a "type". How to write a good one: references/document.md`;
 
 const args = process.argv.slice(2), command = args.shift();
 const flag = (name) => { const i = args.indexOf(name); if (i < 0) return undefined; const v = args[i + 1]; args.splice(i, 2); return v; };
@@ -38,12 +40,16 @@ else if (command === 'types') {
   const file = join(root, 'examples', `${args[0]}.json`);
   if (!args[0] || !existsSync(file)) fail(`example needs a type: ${readdirSync(join(root, 'examples')).map((f) => f.replace('.json', '')).join(', ')}`);
   process.stdout.write(readFileSync(file, 'utf8'));
+} else if (command === 'fields') {
+  const type = TYPES.find((t) => t.name === args[0]);
+  if (!type) fail(`fields needs a type: ${TYPES.map((t) => t.name).join(', ')}`);
+  console.log(`${type.name}: ${type.when}\n\n${describe(type.spec).join('\n')}`);
 } else if (command === 'validate' || command === 'render') {
   const out = flag('--out'), png = has('--png'), draft = has('--draft');
   if (!args.length) fail(`${command} needs at least one file`);
   let bad = 0;
   for (const file of args) {
-    const result = command === 'validate' ? { issues: (() => { const r = render(load(file)); return r.issues; })() } : render(load(file));
+    const result = render(load(file), { baseDir: dirname(resolve(file)) });
     report(file, result.issues);
     if (result.issues.some((i) => i.level === 'error')) { bad++; if (!(draft && result.draft)) continue; Object.assign(result, result.draft); }
     if (command === 'validate') { console.log(`✓ ${file}`); continue; }

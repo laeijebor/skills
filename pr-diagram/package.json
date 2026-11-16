@@ -4,6 +4,6 @@
   "private": true,
   "type": "module",
   "bin": { "pr-diagram": "bin/pr-diagram.mjs" },
-  "scripts": { "test": "node --test test/" },
+  "scripts": { "test": "node --test test/*.test.mjs" },
   "engines": { "node": ">=20" }
 }

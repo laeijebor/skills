@@ -58,14 +58,15 @@ export function drawNode(scene, { id, x, y, w, h, label, sub, delta, shape = 'ca
   if (shape === 'diamond') s += `<path d="M${r1(x + w / 2)} ${r1(y)}L${r1(x + w)} ${r1(y + h / 2)}L${r1(x + w / 2)} ${r1(y + h)}L${r1(x)} ${r1(y + h / 2)}z" ${attrs}/>`;
   else s += `<rect x="${r1(x)}" y="${r1(y)}" width="${r1(w)}" height="${r1(h)}" rx="${shape === 'pill' ? r1(h / 2) : big ? 12 : 8}" ${attrs}/>`;
   const strike = lk.strike ? ' text-decoration="line-through" opacity=".65"' : '';
-  const room = shape === 'diamond' ? w * 0.62 : w - 22;
+  const room = big ? Infinity : shape === 'diamond' ? w * 0.62 : w - 22;
   fit(scene, label, room, 13, false, true, 'label');
   if (sub) fit(scene, sub, room, 10.5, true, false, 'subtitle');
   if (shape === 'card') {
-    const ty = big ? y + 27 : y + h / 2 + (sub ? -3 : 4.5);
+    const ty = y + h / 2 + (sub ? -3 : 4.5);
     s += `<text class="t" x="${r1(x + 12)}" y="${r1(ty)}"${big ? ' font-size="15"' : ''}${strike}>${esc(label)}</text>`;
     if (sub) s += `<text class="s" x="${r1(x + 12)}" y="${r1(ty + 15)}">${esc(sub)}</text>`;
-    if (lk.badge) s += `<text class="l" x="${r1(x + w - 8)}" y="${r1(y + 13)}" text-anchor="end" font-size="8" fill="${lk.tone}">${lk.badge}</text>`;
+    if (lk.badge && big) s += `<text class="l" x="${r1(x + 12)}" y="${r1(ty + (sub ? 31 : 17))}" font-size="8" style="fill:${lk.tone}">${lk.badge}</text>`;
+    else if (lk.badge) s += `<text class="l" x="${r1(x + w - 8)}" y="${r1(y + 13)}" text-anchor="end" font-size="8" style="fill:${lk.tone}">${lk.badge}</text>`;
   } else {
     const ty = y + h / 2 + (sub ? -3 : 4.5);
     s += `<text class="t" x="${r1(x + w / 2)}" y="${r1(ty)}" text-anchor="middle"${strike}>${esc(label)}</text>`;
@@ -143,14 +144,15 @@ export function finalize(scene) {
     if (scene.mode === 'new') { foot += `<text class="s" x="${lx}" y="${fy}">everything shown is new, except cards marked existing</text>`; lx += textWidth('everything shown is new, except cards marked existing', 10.5, true) + 22; }
     for (const k of legend) {
       if (scene.mode === 'new' && k === 'existing') continue;
-      foot += `<circle cx="${r1(lx + 4)}" cy="${fy - 3.5}" r="4" fill="${LEGEND[k][1]}"/><text class="s" x="${r1(lx + 13)}" y="${fy}">${LEGEND[k][0]}</text>`;
-      lx += 13 + textWidth(LEGEND[k][0], 10.5, true) + 18;
+      const word = scene.mode === 'new' && k === 'added' ? 'connects to existing code' : LEGEND[k][0];
+      foot += `<circle cx="${r1(lx + 4)}" cy="${fy - 3.5}" r="4" fill="${LEGEND[k][1]}"/><text class="s" x="${r1(lx + 13)}" y="${fy}">${word}</text>`;
+      lx += 13 + textWidth(word, 10.5, true) + 18;
     }
     fy += 20;
   }
   capLines.forEach((line) => { foot += `<text x="${PAD}" y="${fy}" font-family='${SANS}' font-size="11.5" fill="${C.body}">${esc(line)}</text>`; fy += 17; });
   const H = Math.ceil(fy + 2);
-  const tw = textWidth(title, 17, false, true);
+  const tw = textWidth(title, 17, false, true) * 0.9;
   const markers = ['neutral', 'added', 'changed', 'removed'].map((k) => `<marker id="m-${k}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="${k === 'neutral' ? C.edge : C[k]}"/></marker>`).join('');
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(title + (doc.caption ? '. ' + doc.caption : ''))}">
 <style>
