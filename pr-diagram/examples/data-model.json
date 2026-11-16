@@ -1,0 +1,106 @@
+{
+  "type": "data-model",
+  "title": "Worktrees become their own table",
+  "caption": "Sessions point at a worktree row instead of storing a path, so a deleted worktree can be detected and recreated.",
+  "entities": [
+    {
+      "id": "sessions",
+      "name": "sessions",
+      "fields": [
+        {
+          "name": "id",
+          "type": "uuid pk"
+        },
+        {
+          "name": "title",
+          "type": "text"
+        },
+        {
+          "name": "status",
+          "type": "enum +waiting",
+          "delta": "changed"
+        },
+        {
+          "name": "worktree_path",
+          "type": "text",
+          "delta": "removed"
+        },
+        {
+          "name": "worktree_id",
+          "type": "uuid fk",
+          "delta": "added"
+        },
+        {
+          "name": "closed_at",
+          "type": "timestamp"
+        }
+      ]
+    },
+    {
+      "id": "worktrees",
+      "name": "worktrees",
+      "delta": "added",
+      "fields": [
+        {
+          "name": "id",
+          "type": "uuid pk"
+        },
+        {
+          "name": "path",
+          "type": "text unique"
+        },
+        {
+          "name": "branch",
+          "type": "text"
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamp null"
+        }
+      ]
+    },
+    {
+      "id": "panes",
+      "name": "panes",
+      "fields": [
+        {
+          "name": "id",
+          "type": "uuid pk"
+        },
+        {
+          "name": "session_id",
+          "type": "uuid fk"
+        },
+        {
+          "name": "identity_hash",
+          "type": "text",
+          "delta": "added"
+        },
+        {
+          "name": "tmux_target",
+          "type": "text"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "from": "sessions.worktree_id",
+      "to": "worktrees.id",
+      "label": "many to one",
+      "delta": "added"
+    },
+    {
+      "from": "panes.session_id",
+      "to": "sessions.id",
+      "label": "many to one"
+    }
+  ],
+  "migration": [
+    "Create worktrees.",
+    "Backfill it from sessions.worktree_path, one row per distinct path.",
+    "Add sessions.worktree_id and fill it.",
+    "Drop sessions.worktree_path."
+  ],
+  "warning": "Step 4 cannot be undone. It ships in a later release than steps 1 to 3."
+}

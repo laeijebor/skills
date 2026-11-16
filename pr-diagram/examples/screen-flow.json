@@ -1,0 +1,99 @@
+{
+  "type": "screen-flow",
+  "title": "Reopen a chat whose worktree is gone",
+  "caption": "Closed chats get a Reopen button. If the worktree was deleted, a sheet offers to recreate it first.",
+  "screens": [
+    {
+      "id": "chats",
+      "title": "Chats",
+      "elements": [
+        {
+          "kind": "row",
+          "label": "billing-export"
+        },
+        {
+          "kind": "row",
+          "label": "fix-login · closed"
+        },
+        {
+          "id": "reopen",
+          "kind": "button",
+          "label": "Reopen",
+          "delta": "added"
+        },
+        {
+          "kind": "row",
+          "label": "ota-pipeline"
+        },
+        {
+          "kind": "row"
+        },
+        {
+          "kind": "row"
+        }
+      ]
+    },
+    {
+      "id": "missing",
+      "title": "Chats",
+      "delta": "added",
+      "sheet": true,
+      "elements": [
+        {
+          "kind": "heading",
+          "label": "Worktree was deleted"
+        },
+        {
+          "kind": "text",
+          "label": "Recreate from fix-login?"
+        },
+        {
+          "id": "recreate",
+          "kind": "button",
+          "label": "Recreate and reopen",
+          "delta": "added"
+        },
+        {
+          "kind": "button",
+          "label": "Cancel"
+        }
+      ]
+    },
+    {
+      "id": "chat",
+      "title": "fix-login",
+      "elements": [
+        {
+          "kind": "text"
+        },
+        {
+          "kind": "row"
+        },
+        {
+          "kind": "text"
+        },
+        {
+          "kind": "row"
+        },
+        {
+          "kind": "input",
+          "label": "Message"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "from": "chats.reopen",
+      "to": "missing",
+      "label": "worktree gone",
+      "delta": "added"
+    },
+    {
+      "from": "missing.recreate",
+      "to": "chat",
+      "label": "recreated",
+      "delta": "added"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "type": "architecture",
+  "title": "Quick add survives a crash between stores",
+  "caption": "settle now resumes an add that was saved but not finished, replaying the same events with the same times.",
+  "zones": [
+    { "id": "outside", "label": "Outside the app", "at": "top-left" },
+    { "id": "core", "label": "App core · packages/core", "at": "top" },
+    { "id": "stores", "label": "Stores · device and LiveStore", "at": "bottom" }
+  ],
+  "nodes": [
+    { "id": "inbox", "label": "App Group inbox", "sub": "Siri and share records", "zone": "outside" },
+    { "id": "importer", "label": "InboxImporter", "sub": "card first", "delta": "changed", "zone": "core", "col": 0, "row": 0 },
+    { "id": "settle", "label": "settle", "sub": "start, foreground", "delta": "changed", "zone": "core", "col": 1, "row": 0 },
+    { "id": "quick-add", "label": "QuickAdd", "sub": "add, finish, resume", "delta": "changed", "zone": "core", "col": 0, "row": 1 },
+    { "id": "queue", "label": "CaptureQueue", "sub": "skips saved adds", "zone": "core", "col": 1, "row": 1 },
+    { "id": "sorter", "label": "QuickAddSorter", "sub": "waits for Family", "delta": "changed", "zone": "core", "col": 2, "row": 1 },
+    { "id": "cards", "label": "Catch-up cards", "sub": "this device's list", "zone": "stores" },
+    { "id": "personal", "label": "Personal store", "sub": "intent, then confirm", "zone": "stores" },
+    { "id": "family", "label": "Family space store", "sub": "thing, start, link", "zone": "stores" }
+  ],
+  "edges": [
+    { "from": "inbox", "to": "importer", "label": "records" },
+    { "from": "settle", "to": "importer", "label": "run" },
+    { "from": "settle", "to": "queue", "label": "resume" },
+    { "from": "settle", "to": "quick-add", "label": "resume", "delta": "added" },
+    { "from": "importer", "to": "cards", "step": 1, "label": "register the catch-up card before any write", "delta": "changed" },
+    { "from": "importer", "to": "quick-add", "label": "add or finish", "delta": "changed" },
+    { "from": "quick-add", "to": "personal", "step": 2, "label": "write intent, and confirm at the end", "delta": "changed" },
+    { "from": "quick-add", "to": "family", "step": 3, "label": "thing, start, link", "delta": "changed" },
+    { "from": "sorter", "to": "family", "label": "quiet sorting" }
+  ]
+}

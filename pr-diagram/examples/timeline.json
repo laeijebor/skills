@@ -1,0 +1,132 @@
+{
+  "type": "timeline",
+  "title": "Session tree edits no longer overwrite each other",
+  "caption": "The phone's write now carries the revision it read. A stale write is refused and retried on fresh data.",
+  "lanes": [
+    {
+      "id": "mobile",
+      "label": "Mobile"
+    },
+    {
+      "id": "daemon",
+      "label": "Daemon"
+    }
+  ],
+  "scenarios": [
+    {
+      "label": "Before: lost update",
+      "events": [
+        {
+          "id": "read",
+          "lane": "mobile",
+          "at": 0,
+          "label": "read tree v1"
+        },
+        {
+          "id": "move",
+          "lane": "daemon",
+          "at": 1,
+          "label": "write tree v2"
+        },
+        {
+          "id": "write",
+          "lane": "mobile",
+          "at": 2,
+          "label": "write v1 + edit",
+          "delta": "removed"
+        },
+        {
+          "id": "lost",
+          "lane": "daemon",
+          "at": 2,
+          "label": "v2 overwritten",
+          "delta": "removed"
+        }
+      ],
+      "links": [
+        {
+          "from": "write",
+          "to": "lost",
+          "delta": "removed"
+        }
+      ],
+      "outcome": {
+        "text": "the group move is lost",
+        "tone": "bad"
+      }
+    },
+    {
+      "label": "After: revision check",
+      "events": [
+        {
+          "id": "read",
+          "lane": "mobile",
+          "at": 0,
+          "label": "read tree v1"
+        },
+        {
+          "id": "move",
+          "lane": "daemon",
+          "at": 1,
+          "label": "write tree v2"
+        },
+        {
+          "id": "write",
+          "lane": "mobile",
+          "at": 2,
+          "label": "write (rev 1)",
+          "delta": "added"
+        },
+        {
+          "id": "stale",
+          "lane": "daemon",
+          "at": 2,
+          "label": "409 stale",
+          "delta": "added"
+        },
+        {
+          "id": "refetch",
+          "lane": "mobile",
+          "at": 3,
+          "label": "refetch v2",
+          "delta": "added"
+        },
+        {
+          "id": "again",
+          "lane": "mobile",
+          "at": 4,
+          "label": "write (rev 2)",
+          "delta": "added"
+        },
+        {
+          "id": "ok",
+          "lane": "daemon",
+          "at": 4,
+          "label": "tree v3",
+          "delta": "added"
+        }
+      ],
+      "links": [
+        {
+          "from": "write",
+          "to": "stale",
+          "delta": "added"
+        },
+        {
+          "from": "stale",
+          "to": "refetch",
+          "delta": "added"
+        },
+        {
+          "from": "again",
+          "to": "ok",
+          "delta": "added"
+        }
+      ],
+      "outcome": {
+        "text": "both edits survive",
+        "tone": "good"
+      }
+    }
+  ]
+}

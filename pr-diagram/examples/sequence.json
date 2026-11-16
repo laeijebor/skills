@@ -1,0 +1,72 @@
+{
+  "type": "sequence",
+  "title": "Bulk sends go out in batches",
+  "caption": "One request per 500 recipients replaces one request per recipient.",
+  "participants": [
+    {
+      "id": "route",
+      "label": "Queue route",
+      "sub": "POST /broadcasts"
+    },
+    {
+      "id": "sender",
+      "label": "sendBroadcastBulk",
+      "sub": "Cloud Function",
+      "delta": "added"
+    },
+    {
+      "id": "db",
+      "label": "Firestore",
+      "sub": "broadcasts"
+    },
+    {
+      "id": "postmark",
+      "label": "Postmark",
+      "sub": "external"
+    }
+  ],
+  "messages": [
+    {
+      "from": "route",
+      "to": "sender",
+      "label": "enqueue job",
+      "delta": "changed"
+    },
+    {
+      "from": "sender",
+      "to": "db",
+      "label": "claim broadcast",
+      "delta": "added"
+    },
+    {
+      "from": "db",
+      "to": "sender",
+      "label": "recipients",
+      "kind": "return"
+    },
+    {
+      "from": "sender",
+      "to": "sender",
+      "label": "chunk into 500s",
+      "delta": "added"
+    },
+    {
+      "from": "sender",
+      "to": "postmark",
+      "label": "POST /email/batch × 4",
+      "delta": "added"
+    },
+    {
+      "from": "postmark",
+      "to": "sender",
+      "label": "200 accepted",
+      "kind": "return"
+    },
+    {
+      "from": "sender",
+      "to": "db",
+      "label": "mark sent",
+      "delta": "added"
+    }
+  ]
+}

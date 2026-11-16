@@ -1,0 +1,84 @@
+{
+  "type": "architecture",
+  "title": "Voice notes: a new capture path",
+  "caption": "A new area. It plugs into the existing capture queue and nothing else.",
+  "zones": [
+    {
+      "id": "app",
+      "label": "Mobile app",
+      "at": "top"
+    },
+    {
+      "id": "core",
+      "label": "packages/voice (new)",
+      "at": "center"
+    },
+    {
+      "id": "existing",
+      "label": "Existing",
+      "at": "bottom"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "button",
+      "label": "Record button",
+      "sub": "hold to talk",
+      "delta": "added",
+      "zone": "app"
+    },
+    {
+      "id": "recorder",
+      "label": "Recorder",
+      "sub": "expo-audio",
+      "delta": "added",
+      "zone": "core"
+    },
+    {
+      "id": "transcriber",
+      "label": "Transcriber",
+      "sub": "on device",
+      "delta": "added",
+      "zone": "core"
+    },
+    {
+      "id": "parser",
+      "label": "NoteParser",
+      "sub": "text to capture",
+      "delta": "added",
+      "zone": "core"
+    },
+    {
+      "id": "queue",
+      "label": "CaptureQueue",
+      "sub": "unchanged",
+      "zone": "existing"
+    }
+  ],
+  "edges": [
+    {
+      "from": "button",
+      "to": "recorder",
+      "label": "start, stop",
+      "delta": "added"
+    },
+    {
+      "from": "recorder",
+      "to": "transcriber",
+      "label": "audio file",
+      "delta": "added"
+    },
+    {
+      "from": "transcriber",
+      "to": "parser",
+      "label": "text",
+      "delta": "added"
+    },
+    {
+      "from": "parser",
+      "to": "queue",
+      "label": "enqueue",
+      "delta": "added"
+    }
+  ]
+}

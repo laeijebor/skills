@@ -1,0 +1,113 @@
+{
+  "type": "architecture",
+  "layout": "focus",
+  "title": "QuickAdd can resume a half-finished add",
+  "caption": "QuickAdd gains a resume path. Callers and stores are unchanged in shape; only the order of writes moved.",
+  "nodes": [
+    {
+      "id": "importer",
+      "label": "InboxImporter",
+      "sub": "card first, then add",
+      "delta": "changed",
+      "role": "caller"
+    },
+    {
+      "id": "settle",
+      "label": "settle",
+      "sub": "start, foreground",
+      "delta": "changed",
+      "role": "caller"
+    },
+    {
+      "id": "quick-add",
+      "label": "QuickAdd",
+      "delta": "changed",
+      "role": "focus",
+      "parts": [
+        {
+          "id": "add",
+          "label": "add",
+          "sub": "first try"
+        },
+        {
+          "id": "finish",
+          "label": "finish",
+          "sub": "on repeat",
+          "delta": "changed"
+        },
+        {
+          "id": "resume",
+          "label": "resume",
+          "sub": "after a crash",
+          "delta": "added"
+        }
+      ]
+    },
+    {
+      "id": "cards",
+      "label": "Catch-up cards",
+      "sub": "this device's list",
+      "role": "callee"
+    },
+    {
+      "id": "personal",
+      "label": "Personal store",
+      "sub": "intent, then confirm",
+      "role": "callee"
+    },
+    {
+      "id": "family",
+      "label": "Family space store",
+      "sub": "thing, start, link",
+      "role": "callee"
+    },
+    {
+      "id": "queue",
+      "label": "CaptureQueue",
+      "sub": "skips saved adds",
+      "role": "sibling"
+    },
+    {
+      "id": "sorter",
+      "label": "QuickAddSorter",
+      "sub": "waits for Family",
+      "delta": "changed",
+      "role": "sibling"
+    }
+  ],
+  "edges": [
+    {
+      "from": "importer",
+      "to": "quick-add.add",
+      "label": "add, or finish",
+      "delta": "changed"
+    },
+    {
+      "from": "settle",
+      "to": "quick-add.resume",
+      "label": "resume",
+      "delta": "added"
+    },
+    {
+      "from": "importer",
+      "to": "cards",
+      "step": 1,
+      "label": "register the card before any write",
+      "delta": "changed"
+    },
+    {
+      "from": "quick-add",
+      "to": "personal",
+      "step": 2,
+      "label": "intent first, confirm last",
+      "delta": "changed"
+    },
+    {
+      "from": "quick-add",
+      "to": "family",
+      "step": 3,
+      "label": "thing, start, link",
+      "delta": "changed"
+    }
+  ]
+}
