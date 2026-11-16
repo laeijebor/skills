@@ -83,6 +83,8 @@ test('before/after works out what was added and removed', () => {
 test('edges a type cannot draw are refused with a reason', () => {
   const loop = example('pipeline'); loop.edges.push({ from: 'ota', to: 'ota' });
   assert.match(errors(validate(loop)).join('\n'), /back to itself/);
+  const own = example('architecture-focus'); own.edges.push({ from: 'quick-add', to: 'quick-add.add' });
+  assert.match(errors(validate(own)).join('\n'), /back to itself/);
   const twice = example('decision-flow'); twice.edges.push({ ...twice.edges[0] });
   assert.match(errors(validate(twice)).join('\n'), /listed twice/);
   const ok = example('state-machine'); ok.transitions.push({ from: 'running', to: 'running', label: 'heartbeat' });
@@ -158,6 +160,12 @@ test('the legend always fits inside a narrow diagram', () => {
   const xs = [...out.svg.matchAll(/<text class="s" x="([\d.]+)" y="[\d.]+">(connects to existing code|changed|everything[^<]*)</g)].map((m) => Number(m[1]) + m[2].length * 6.5);
   assert.equal(xs.length, 3);
   assert.ok(Math.max(...xs) <= out.width, `legend ends at ${Math.max(...xs)} in a ${out.width}px diagram`);
+});
+
+test('an edge may not double back through the card it ends on', () => {
+  const at = (id, col, row) => ({ id, label: id.toUpperCase(), col, row });
+  const doc = { type: 'architecture', title: 't', nodes: [at('a', 0.5, 0), at('b', 2, 1.5), at('c', 1, 1), at('d', 2, 1)], edges: [{ from: 'a', to: 'b' }] };
+  assert.match(errors(render(doc).issues).join('\n'), /has to cut through "B"/);
 });
 
 test('the CLI renders a file and fails on a broken one', () => {

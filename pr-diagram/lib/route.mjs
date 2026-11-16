@@ -97,6 +97,9 @@ export function routeEdges(scene, edges, opts = {}) {
     } else {
       r.c = curve(port(a, r.sa, r.fa), r.sa, port(b, r.sb, r.fb), r.sb, r.bow);
       if (samples(r.c).some((p) => p.x < -8 || p.y < -8)) scene.error(`the edge ${e.from} → ${e.to} has to leave the frame to get around another card; move a card (col/row) or reorder them so the path is clear`);
+      // The only clear way round a neighbour can be a curve that doubles back through the card it is going to (or left).
+      const body = samples(r.c).slice(4, -4);
+      for (const end of [a, b]) if (body.some((p) => inside(p, end, -2))) scene.error(`the edge ${e.from} → ${e.to} has to cut through "${end.name || end.id}" to reach it; move a card (col/row) so the path is clear`);
       for (const hit of crossed(samples(r.c), r.obstacles)) scene.error(`the edge ${e.from} → ${e.to} runs behind "${hit.name || hit.id}"; move a card (col/row) or change the layout so the path is clear`);
     }
     const c = r.c;

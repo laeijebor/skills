@@ -27,7 +27,9 @@ export function validate(doc, issues) {
   const nodes = indexById(doc.nodes, 'nodes', issues), zones = indexById(doc.zones, 'zones', issues);
   const ends = new Map(nodes);
   doc.nodes.forEach((n, i) => { indexById(n.parts, `nodes[${i}].parts`, issues); (n.parts || []).forEach((p) => addEnd(ends, `${n.id}.${p.id}`, p, `nodes[${i}].parts`, issues)); });
-  checkEdges(doc.edges, 'edges', issues);
+  // A node and one of its own parts are the same card, so an edge between them has nowhere to go.
+  const partOf = new Map(doc.nodes.flatMap((n) => (n.parts || []).map((p) => [`${n.id}.${p.id}`, n.id])));
+  checkEdges(doc.edges, 'edges', issues, { same: (e) => e.from === e.to || partOf.get(e.from) === e.to || partOf.get(e.to) === e.from });
   const focus = doc.layout === 'focus';
   if (focus) {
     if (doc.zones) issues.push({ level: 'error', message: 'zones: the focus layout places cards by role; remove zones' });
