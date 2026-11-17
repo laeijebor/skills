@@ -32,6 +32,21 @@ This plugin combines the two and adds matrix-based routing, a verification gate
 
 ## Skills
 
+### disk-cleanup
+
+Audit, then reclaim disk from git worktrees, `node_modules`, Docker, and idle
+tmux/Commando sessions. Merged, clean, idle worktrees are deleted with their branch;
+one with a session is archived through Commando instead, so its chats stay
+restorable. Sessions are never killed. Ageing unmerged worktrees lose their `node_modules`. Docker
+build cache and unused images are pruned. Anything riskier is listed for approval.
+See `disk-cleanup/SKILL.md` for the rules.
+
+```bash
+ln -s "<absolute-path-to-this-repo>/disk-cleanup" ~/.claude/skills/disk-cleanup
+ln -s "<absolute-path-to-this-repo>/disk-cleanup" ~/.codex/skills/disk-cleanup
+ln -s "<absolute-path-to-this-repo>/disk-cleanup" ~/.config/opencode/skills/disk-cleanup
+```
+
 ### pr-diagram
 
 Draw a pull request as an animated SVG and put it in the PR description. The
