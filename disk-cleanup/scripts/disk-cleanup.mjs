@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Audit, then reclaim disk from git worktrees, node_modules, Docker and idle tmux (Commando) sessions.
+// Sessions are never killed: they are archived through Commando, which keeps their chats restorable.
 //
 //   disk-cleanup.mjs audit [--root DIR]... [--stale-days 3] [--active-hours 24] [--abandon-days 14]
 //                          [--no-fetch] [--no-docker] [--no-sizes] [--tmux-socket NAME]
@@ -387,6 +388,12 @@ async function audit(opts) {
       }
     }
 
+    if (added?.action === 'remove-worktree' && state.sessions.length) {
+      // apply archives these through Commando, which removes the worktree and keeps the branch for Restore.
+      added.title += ` → archive session ${state.sessions.filter((session) => !/^(native_app|tilt)-/.test(session.name)).map((session) => `"${session.name}"`).join(', ') || '(helpers only)'} (branch kept)`
+      added.deleteBranch = false
+    }
+
     let pruned = false
     if (!added?.auto && stale && !state.running.length) {
       const nodeModules = await findNodeModules(worktree.path, nested)
@@ -420,8 +427,8 @@ async function audit(opts) {
   // tmux sessions whose every pane points at a folder that no longer exists.
   for (const session of live.sessions.values()) {
     if (session.panes.every((pane) => !existsSync(pane.path)) && session.activity < activeCutoff) {
-      add('f', { action: 'kill-session', group: 'dead-sessions', auto: false, sessions: [{ id: session.id, name: session.name, activity: session.activity, exclusive: true }], lastActivity: session.activity,
-        title: `kill session "${session.name}"`, detail: `every pane is in a deleted folder (${tilde(session.panes[0].path)}); idle ${ago(session.activity)}` })
+      add('f', { action: 'archive-session', group: 'dead-sessions', auto: false, sessions: [{ id: session.id, name: session.name, activity: session.activity, exclusive: true }], lastActivity: session.activity,
+        title: `archive session "${session.name}"`, detail: `every pane is in a deleted folder (${tilde(session.panes[0].path)}); idle ${ago(session.activity)}` })
     }
   }
 
@@ -473,16 +480,16 @@ async function auditDocker(opts, add) {
 }
 
 const GROUPS = {
-  merged: 'AUTO · delete merged worktrees (+ local branch, + their idle tmux sessions)',
+  merged: 'AUTO · delete merged worktrees (+ local branch); one with a session is archived in Commando instead, branch kept',
   'ageing-node-modules': 'AUTO · prune node_modules from ageing worktrees',
   housekeeping: 'AUTO · housekeeping',
   'merged-untracked-only': 'merged, only untracked files would be lost → force-delete worktree + branch',
   'merged-modified': 'merged, but tracked files modified → force-delete worktree + branch',
-  'merged-in-use': 'merged and clean, but in use → delete worktree + branch, kill session',
+  'merged-in-use': 'merged and clean, but in use → delete worktree + branch, or archive its session',
   'stale-nothing-to-lose': 'unmerged and stale, clean, every commit on a remote → delete worktree, keep branch',
   'stale-unsaved-work': 'unmerged and stale with uncommitted or unpushed work → delete worktree, keep branch',
   'unregistered-folders': 'folders in *worktrees dirs that git does not know → delete folder',
-  'dead-sessions': 'tmux sessions whose folders are all gone → kill session',
+  'dead-sessions': 'tmux sessions whose folders are all gone → archive session (chats stay restorable)',
   'docker-containers': 'stopped Docker containers → docker rm',
   'docker-volumes': 'Docker volumes not attached to any container → docker volume rm',
 }
@@ -517,19 +524,81 @@ function report(plan, planPath) {
 
 // ---------- apply ----------
 
-async function killSessions(item, socket, live, cutoff) {
-  const killed = []
-  for (const recorded of item.sessions ?? []) {
-    const session = live.sessions.get(recorded.id)
-    if (!session || session.name !== recorded.name) continue
-    const within = session.panes.every((pane) => (item.path ? inside(pane.path, item.path) : !existsSync(pane.path)))
-    if (!within) { log(`  keep session "${session.name}": it now has panes elsewhere`); continue }
-    if (session.activity > Math.max(recorded.activity, cutoff)) { log(`  keep session "${session.name}": new activity since audit`); continue }
-    const result = await run('tmux', [...(socket ? ['-L', socket] : []), 'kill-session', '-t', session.id])
-    if (result.code === 0) killed.push(session.name)
-    else log(`  could not kill session "${session.name}": ${result.stderr.trim()}`)
+// Commando archives a session the way its own Archive button does: panes and agent chats are kept for
+// Restore, uncommitted work is committed, and the worktree is removed with its branch kept. Killing a
+// session would lose its chats, so when Commando can't archive one the item is skipped instead.
+async function archiveInCommando(session, socket) {
+  // Commando runs on the default tmux server unless COMMANDO_TMUX_SOCKET_NAME names another.
+  if ((socket ?? '') !== (process.env.COMMANDO_TMUX_SOCKET_NAME ?? '')) throw new Error(`session "${session.name}" is on tmux server "${socket ?? 'default'}", which this Commando does not manage; it was kept`)
+  const pane = process.env.TMUX_PANE
+  if (!pane) throw new Error(`run apply from a Commando pane so it can archive session "${session.name}"; it was kept`)
+  let token
+  try { token = readFileSync(process.env.COMMANDO_AGENT_HOOK_TOKEN_PATH ?? join(HOME, '.commando/agent-hook-token'), 'utf8').trim() }
+  catch { throw new Error(`no Commando agent token, so session "${session.name}" could not be archived; it was kept`) }
+  const port = Number(process.env.COMMANDO_PORT ?? 4310)
+  let response
+  try {
+    response = await fetch(`http://127.0.0.1:${port}/api/agent-sessions/archive`, {
+      method: 'POST', signal: AbortSignal.timeout(300_000),
+      headers: { Authorization: `Bearer ${token}`, 'X-Commando-Pane': pane, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: session.id, sessionName: session.name }),
+    })
+  } catch (error) { throw new Error(`Commando is not reachable on port ${port} (${error.message}); session "${session.name}" was kept`) }
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    const hint = response.status === 401 || (response.status === 404 && !body.error) ? ' (the running Commando may predate agent archiving)' : ''
+    throw new Error(`Commando could not archive session "${session.name}": ${body.error ?? `HTTP ${response.status}`}${hint}; it was kept`)
   }
-  return killed
+  return body
+}
+
+// The recorded sessions still live under the same name, still where the audit found them and idle since.
+function liveRecordedSessions(item, ctx) {
+  const cutoff = Date.now() - ctx.plan.opts.activeHours * HOUR
+  const sessions = []
+  for (const recorded of item.sessions ?? []) {
+    const session = ctx.live.sessions.get(recorded.id)
+    if (!session || session.name !== recorded.name) continue
+    if (!session.panes.every((pane) => !existsSync(pane.path))) throw new Error(`session "${session.name}" now has panes in existing folders`)
+    if (session.activity > Math.max(recorded.activity, cutoff)) throw new Error(`session "${session.name}" has new activity since audit`)
+    sessions.push(session)
+  }
+  return sessions
+}
+
+// A worktree with sessions goes through Commando's Archive, which removes it (committing uncommitted work)
+// and keeps the branch so Restore can check it out again; this script deletes neither.
+async function archiveWorktreeSessions(item, sessions, ctx) {
+  // Commando's generated helpers (tilt-<worktree>, native_app-<worktree>) close with the session they support.
+  const helper = new RegExp(`^(native_app|tilt)-${basename(item.path).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
+  const owners = sessions.filter((session) => !helper.test(session.name))
+  if (!owners.length) throw new Error(`only helper session(s) ${sessions.map((session) => `"${session.name}"`).join(', ')} use it; close them in Commando first`)
+  // Each session must be one the audit saw, under the same name, with nothing new in it since.
+  const cutoff = Date.now() - ctx.plan.opts.activeHours * HOUR
+  for (const session of owners) {
+    const recorded = item.sessions?.find((entry) => entry.id === session.id)
+    if (!recorded || recorded.name !== session.name) throw new Error(`session "${session.name}" was not there at audit time`)
+    if (session.activity > Math.max(recorded.activity, cutoff)) throw new Error(`session "${session.name}" has new activity since audit`)
+  }
+  const names = owners.map((session) => `"${session.name}"`).join(', ')
+  if (ctx.dryRun) return `would archive ${names} in Commando (it commits uncommitted work and removes the worktree; branch ${item.branch ?? 'kept'} kept)`
+  const archived = []
+  let kept
+  for (const session of owners) {
+    try {
+      const result = await archiveInCommando(session, ctx.socket)
+      kept ??= result.worktreeKept
+    } catch (error) {
+      if (!archived.length) throw error
+      kept = error.message
+      break
+    }
+    archived.push(`"${session.name}"`)
+    ctx.restore.push(`Commando → Archived → "${session.name}" → Restore   # recreates ${item.path}`)
+  }
+  if (existsSync(item.path)) return `archived ${archived.join(', ')}; worktree kept${kept ? `: ${kept}` : ''}`
+  ctx.removedDeps = true
+  return `archived ${archived.join(', ')}; Commando removed the worktree, branch kept${kept ? ` (${kept})` : ''}`
 }
 
 const actions = {
@@ -550,8 +619,10 @@ const actions = {
     if (state.lastActivity > item.lastActivity + 60_000) throw new Error(`new activity since audit (${ago(state.lastActivity)} ago)`)
     if (!item.force && state.dirty?.length !== 0) throw new Error('worktree is no longer clean')
     if (item.auto && state.external.length) throw new Error(`process now running outside tmux: ${state.external[0].args}`)
-    if (item.auto && state.sessions.some((session) => !session.exclusive)) throw new Error('a session in it now also uses other folders')
-    if (ctx.dryRun) return `would remove${item.deleteBranch ? ` and delete branch ${item.branch}` : ''}${item.sessions?.length ? `, kill ${item.sessions.map((session) => `"${session.name}"`).join(', ')}` : ''}`
+    const shared = state.sessions.filter((session) => !session.exclusive)
+    if (shared.length) throw new Error(`session(s) ${shared.map((session) => `"${session.name}"`).join(', ')} also use other folders; archive them from Commando first`)
+    if (state.sessions.length) return archiveWorktreeSessions(item, state.sessions, ctx)
+    if (ctx.dryRun) return `would remove${item.deleteBranch ? ` and delete branch ${item.branch}` : ''}`
     const removed = await run('git', ['-C', item.repo, 'worktree', 'remove', ...(item.force ? ['--force'] : []), item.path], { timeout: 600_000 })
     if (removed.code) throw new Error(removed.stderr.trim())
     ctx.removedDeps = true
@@ -562,8 +633,6 @@ const actions = {
       if (deleted.code === 0) { note += `, branch ${item.branch} deleted`; ctx.restore.push(`git -C ${item.repo} branch ${item.branch} ${item.head}`) }
       else note += `, branch kept (${deleted.stderr.trim()})`
     }
-    const killed = await killSessions(item, ctx.socket, ctx.live, Date.now() - ctx.plan.opts.activeHours * HOUR)
-    if (killed.length) note += `, killed ${killed.map((name) => `"${name}"`).join(', ')}`
     return note
   },
 
@@ -587,11 +656,16 @@ const actions = {
     return 'deleted'
   },
 
-  async 'kill-session'(item, ctx) {
-    if (ctx.dryRun) return `would kill ${item.sessions.map((session) => `"${session.name}"`).join(', ')}`
-    const killed = await killSessions(item, ctx.socket, ctx.live, Date.now() - ctx.plan.opts.activeHours * HOUR)
-    if (!killed.length) throw new Error('nothing killed')
-    return `killed ${killed.join(', ')}`
+  async 'archive-session'(item, ctx) {
+    const sessions = liveRecordedSessions(item, ctx)
+    if (!sessions.length) throw new Error('session already gone')
+    const names = sessions.map((session) => `"${session.name}"`).join(', ')
+    if (ctx.dryRun) return `would archive ${names} in Commando`
+    for (const session of sessions) {
+      await archiveInCommando(session, ctx.socket)
+      ctx.restore.push(`Commando → Archived → "${session.name}" → Restore`)
+    }
+    return `archived ${names}`
   },
 
   async 'pnpm-store-prune'(item, ctx) {

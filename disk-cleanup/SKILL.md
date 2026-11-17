@@ -1,6 +1,6 @@
 ---
 name: disk-cleanup
-description: Audit and reclaim disk space from git worktrees, node_modules, Docker, and idle tmux/Commando sessions. Use when the user asks to clear down, prune, or clean up worktrees, node_modules, Docker, or disk space, or says the disk is full.
+description: Audit and reclaim disk space from git worktrees, node_modules, Docker, and idle tmux/Commando sessions (which are archived, never killed). Use when the user asks to clear down, prune, or clean up worktrees, node_modules, Docker, or disk space, or says the disk is full.
 ---
 
 # Disk cleanup
@@ -11,10 +11,10 @@ Everything runs through `scripts/disk-cleanup.mjs` (Node, no dependencies). Run 
 
 | Bucket | Condition | Action |
 |---|---|---|
-| **Auto: delete** | Merged into origin's default branch (ancestor, merged PR at this HEAD, or all changes already in main after a squash or rebase), clean, no open PR, idle ≥ `--active-hours` (24h), no process outside tmux using it, and every tmux session in it lives only there. | `git worktree remove`, delete the local branch, kill those tmux (Commando) sessions |
+| **Auto: delete** | Merged into origin's default branch (ancestor, merged PR at this HEAD, or all changes already in main after a squash or rebase), clean, no open PR, idle ≥ `--active-hours` (24h), no process outside tmux using it, and every tmux session in it lives only there. | `git worktree remove`, delete the local branch. A worktree with a session is archived through Commando instead (see below) |
 | **Auto: prune** | Not auto-deletable (dirty, open PR, unmerged…), idle ≥ `--stale-days` (3d), no dev server or other program running in it. | Delete every `node_modules` in the worktree, then `pnpm store prune` |
 | **Auto: housekeeping** | Registered worktrees whose folder is gone; Docker build cache, unused images and networks older than `--stale-days`. | `git worktree prune`; `docker builder/image/network prune` |
-| **Needs approval** | Grouped so whole groups can be approved: `merged-untracked-only`, `merged-modified`, `merged-in-use` (recent activity, processes outside tmux, or a shared session), `stale-nothing-to-lose` and `stale-unsaved-work` (PR closed unmerged, or no PR and idle ≥ `--abandon-days`, 14d), `unregistered-folders` (inside `*worktrees` directories), `dead-sessions` (every folder gone), `docker-containers` (stopped), `docker-volumes` (unattached). | Proposed action per group; branches of unmerged work are kept |
+| **Needs approval** | Grouped so whole groups can be approved: `merged-untracked-only`, `merged-modified`, `merged-in-use` (recent activity, processes outside tmux, or a shared session), `stale-nothing-to-lose` and `stale-unsaved-work` (PR closed unmerged, or no PR and idle ≥ `--abandon-days`, 14d), `unregistered-folders` (inside `*worktrees` directories), `dead-sessions` (every folder gone; archived), `docker-containers` (stopped), `docker-volumes` (unattached). | Proposed action per group; branches of unmerged work are kept |
 | **Left alone** | Main checkouts, active or recently touched worktrees, locked worktrees, the worktree this agent runs in. | None |
 
 Idle time is the latest of: HEAD commit time, mtimes of uncommitted files, tmux session activity, and Claude transcript writes (`~/.claude*/projects/<encoded path>`).
@@ -34,5 +34,7 @@ Use `apply … --dry-run` to see exactly what would happen after re-validation w
 
 - Act only through `apply`, so every item is re-checked. Don't hand-delete worktrees or kill sessions on the script's behalf.
 - Never prune Docker volumes or stopped containers without approval; they can hold database state.
-- Sessions are killed only on the default tmux server (`--tmux-socket NAME` targets another), and only when all their panes are inside the deleted worktree and nothing has happened in them since the audit.
+- **Sessions are never killed; at most they are archived.** For a worktree with a tmux session, `apply` asks Commando to archive the session, as its Archive button does: panes and agent chats are kept, uncommitted work is committed as a WIP commit, Commando removes the worktree, and the branch is kept so Restore checks it out again. The log lists these as `Commando → Archived → "<name>" → Restore`.
+- Archiving needs the running Commando daemon (`COMMANDO_PORT`, default 4310, with the agent token in `~/.commando/agent-hook-token`), and `apply` must run from a Commando pane (`TMUX_PANE`). If Commando can't archive a session, the item is skipped and the session and worktree stay. The same applies to sessions on another tmux server (`--tmux-socket`), and to a worktree whose session also has panes in other folders.
+- A session is archived only when nothing has happened in it since the audit.
 - Sizes are `du` estimates. pnpm hard links and clones mean real savings from `node_modules` can be lower until `pnpm store prune` runs; the free-space change `apply` reports is the real figure.
