@@ -35,8 +35,9 @@ This plugin combines the two and adds matrix-based routing, a verification gate
 ### disk-cleanup
 
 Audit, then reclaim disk from git worktrees, `node_modules`, Docker, and idle
-tmux/Commando sessions. Merged, clean, idle worktrees are deleted, along with their
-branch and sessions. Ageing unmerged worktrees lose their `node_modules`. Docker
+tmux/Commando sessions. Merged, clean, idle worktrees are deleted with their branch;
+one with a session is archived through Commando instead, so its chats stay
+restorable. Sessions are never killed. Ageing unmerged worktrees lose their `node_modules`. Docker
 build cache and unused images are pruned. Anything riskier is listed for approval.
 See `disk-cleanup/SKILL.md` for the rules.
 
@@ -45,3 +46,44 @@ ln -s "<absolute-path-to-this-repo>/disk-cleanup" ~/.claude/skills/disk-cleanup
 ln -s "<absolute-path-to-this-repo>/disk-cleanup" ~/.codex/skills/disk-cleanup
 ln -s "<absolute-path-to-this-repo>/disk-cleanup" ~/.config/opencode/skills/disk-cleanup
 ```
+
+### pr-diagram
+
+Draw a pull request as an animated SVG and put it in the PR description. The
+agent picks one of eleven diagram types by the question a reviewer has
+(architecture, sequence, before/after, decision flow, state machine, race
+timeline, data-model diff, screen flow, measured before/after, pipeline,
+change map), writes a small JSON document, and the renderer in
+`pr-diagram/` validates and draws it. `gh pr create --attach` uploads it into
+the description. No dependencies, no network. See `pr-diagram/SKILL.md`.
+
+```bash
+node pr-diagram/bin/pr-diagram.mjs types
+node pr-diagram/bin/pr-diagram.mjs render pr-diagram/examples/*.json --out /tmp/diagrams --png
+npm test --prefix pr-diagram
+```
+
+```bash
+ln -s "<absolute-path-to-this-repo>/pr-diagram" ~/.claude/skills/pr-diagram
+ln -s "<absolute-path-to-this-repo>/pr-diagram" ~/.codex/skills/pr-diagram
+ln -s "<absolute-path-to-this-repo>/pr-diagram" ~/.config/opencode/skills/pr-diagram
+```
+
+Needs Node 20+ and GitHub CLI 2.99+. The PNG preview needs Chrome or Chromium.
+
+### slides
+
+Make visual slide decks and A4 one-pagers from code, evidence or a topic.
+Includes HTML layouts, Ink and Paper themes, and a small Node CLI to scaffold,
+check and export PDF, PowerPoint, PNG and self-contained HTML. Works without
+Commando. See `slides/SKILL.md`.
+
+```bash
+ln -s "<absolute-path-to-this-repo>/slides" ~/.claude/skills/slides
+ln -s "<absolute-path-to-this-repo>/slides" ~/.codex/skills/slides
+ln -s "<absolute-path-to-this-repo>/slides" ~/.config/opencode/skills/slides
+npm install --prefix "<absolute-path-to-this-repo>/slides"
+```
+
+Needs Node 20+ and Chromium/Chrome for rendering. Install the CLI dependencies once,
+then run `node <absolute-path-to-this-repo>/slides/bin/slides.mjs --help`.

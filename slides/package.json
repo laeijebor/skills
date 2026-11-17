@@ -1,0 +1,22 @@
+{
+  "name": "@laeijebor/slides-cli",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "slides": "bin/slides.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "playwright-core": "^1.56.1",
+    "pptxgenjs": "^4.0.1"
+  },
+  "overrides": {
+    "image-size": "^2.0.4"
+  }
+}

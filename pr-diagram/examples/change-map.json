@@ -1,0 +1,72 @@
+{
+  "type": "change-map",
+  "title": "Where the reopen change lives",
+  "caption": "Start with the checkout rule; the tests are generated cases and can be skimmed.",
+  "groups": [
+    {
+      "label": "server/",
+      "files": [
+        {
+          "label": "worktrees.ts",
+          "added": 212,
+          "removed": 40,
+          "delta": "changed",
+          "note": "checkout rules",
+          "order": 1,
+          "why": "the rule that refuses a second checkout; everything else depends on it"
+        },
+        {
+          "label": "reopen.ts",
+          "added": 140,
+          "delta": "added",
+          "order": 2,
+          "why": "decides between recreating the worktree and attaching to a live one"
+        },
+        {
+          "label": "chats.ts",
+          "added": 48,
+          "delta": "changed"
+        }
+      ]
+    },
+    {
+      "label": "src/",
+      "files": [
+        {
+          "label": "ReopenDialog.tsx",
+          "added": 120,
+          "delta": "added",
+          "order": 3,
+          "why": "the only new UI"
+        },
+        {
+          "label": "ChatList.tsx",
+          "added": 52,
+          "removed": 18,
+          "delta": "changed"
+        }
+      ]
+    },
+    {
+      "label": "shared/",
+      "files": [
+        {
+          "label": "agent-chat.ts",
+          "added": 64,
+          "delta": "changed",
+          "note": "types"
+        }
+      ]
+    },
+    {
+      "label": "tests · skim",
+      "files": [
+        {
+          "label": "reopen.test.ts",
+          "added": 310,
+          "note": "generated cases"
+        }
+      ]
+    }
+  ]
+}

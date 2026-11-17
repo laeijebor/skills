@@ -1,0 +1,106 @@
+{
+  "type": "decision-flow",
+  "title": "Reopening a chat whose worktree was deleted",
+  "caption": "A deleted worktree used to be a dead end. The chat now attaches to a live checkout of the branch, or recreates the worktree.",
+  "nodes": [
+    {
+      "id": "start",
+      "kind": "start",
+      "label": "Reopen closed chat",
+      "col": 1,
+      "row": 0
+    },
+    {
+      "id": "exists",
+      "kind": "decision",
+      "label": "Worktree exists?",
+      "col": 1,
+      "row": 1
+    },
+    {
+      "id": "reopen",
+      "label": "Reopen in place",
+      "sub": "unchanged path",
+      "col": 2,
+      "row": 1
+    },
+    {
+      "id": "error",
+      "label": "Error: path not found",
+      "sub": "chat could not be reopened",
+      "delta": "removed",
+      "col": 0,
+      "row": 2
+    },
+    {
+      "id": "live",
+      "kind": "decision",
+      "label": "Branch live elsewhere?",
+      "delta": "added",
+      "col": 1,
+      "row": 2
+    },
+    {
+      "id": "attach",
+      "label": "Attach to that checkout",
+      "sub": "no second checkout",
+      "delta": "added",
+      "col": 2,
+      "row": 2
+    },
+    {
+      "id": "recreate",
+      "label": "Recreate worktree",
+      "sub": "from the saved branch",
+      "delta": "added",
+      "col": 1,
+      "row": 3
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "exists"
+    },
+    {
+      "from": "exists",
+      "to": "reopen",
+      "label": "yes"
+    },
+    {
+      "from": "exists",
+      "to": "error",
+      "label": "no (before)",
+      "delta": "removed"
+    },
+    {
+      "from": "exists",
+      "to": "live",
+      "label": "no",
+      "delta": "added"
+    },
+    {
+      "from": "live",
+      "to": "attach",
+      "label": "yes",
+      "delta": "added"
+    },
+    {
+      "from": "live",
+      "to": "recreate",
+      "label": "no",
+      "delta": "added"
+    },
+    {
+      "from": "attach",
+      "to": "reopen",
+      "delta": "added"
+    },
+    {
+      "from": "recreate",
+      "to": "attach",
+      "label": "then",
+      "delta": "added"
+    }
+  ]
+}
