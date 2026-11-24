@@ -9,7 +9,7 @@
 // audit writes a plan to ~/.local/state/disk-cleanup/ and prints a report. apply re-checks every
 // selected item against live state before acting and writes a log with what it removed.
 import { execFile } from 'node:child_process'
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 
@@ -66,6 +66,8 @@ function human(kb) {
 }
 
 function mtime(path) { try { return lstatSync(path).mtimeMs } catch { return 0 } }
+// Like existsSync, but a symlink counts even when its target is missing.
+function onDisk(path) { try { lstatSync(path); return true } catch { return false } }
 
 async function diskFreeKB() {
   const { stdout } = await run('df', ['-k', HOME])
@@ -379,12 +381,27 @@ async function audit(opts) {
       if (closed || state.lastActivity < abandonCutoff) {
         const count = await run('git', ['-C', repo.path, 'rev-list', '--count', worktree.head, '--not', '--remotes'])
         const unpushed = count.code === 0 ? Number(count.stdout.trim()) : null
-        flag('f', { ...describe, action: 'remove-worktree', deleteBranch: false, force: !clean, auto: false,
-          group: clean && unpushed === 0 ? 'stale-nothing-to-lose' : 'stale-unsaved-work',
-          title: `delete ${closed ? 'closed-PR' : 'abandoned'} worktree ${tilde(worktree.path)} (branch kept)`,
-          detail: [closed ? `PR #${latest.number} closed without merge` : latest ? `PR #${latest.number} merged, but later commits are not; idle ${ago(state.lastActivity)}` : `no PR, idle ${ago(state.lastActivity)}`,
-            clean ? 'clean' : `${state.dirty.length} uncommitted change(s) would be lost`,
-            unpushed === null ? 'could not count unpushed commits' : unpushed ? `${unpushed} commit(s) not on any remote (kept on the local branch)` : 'all commits pushed'].join('; ') })
+        // On a branch nothing is lost: uncommitted work becomes a WIP commit and the branch is kept.
+        const onBranch = Boolean(worktree.branch)
+        const blockers = [
+          ...(repo.slug && !repo.prs ? ['PR status unknown (gh failed)'] : []),
+          ...(!onBranch && (!clean || unpushed !== 0) ? ['detached HEAD, so its uncommitted work and unpushed commits would be lost'] : []),
+          ...(state.external.length ? [`${state.external.length} process(es) outside tmux: ${state.external.map((proc) => proc.args.split(' ')[0]).join(', ')}`] : []),
+          ...(sharedSessions.length ? [`session(s) ${sharedSessions.map((session) => `"${session.name}"`).join(', ')} also use other folders`] : []),
+        ]
+        const kept = [
+          clean ? 'clean' : onBranch ? `${state.dirty.length} uncommitted change(s) saved as a WIP commit` : `${state.dirty.length} uncommitted change(s) would be lost`,
+          unpushed === null ? 'could not count unpushed commits' : unpushed ? `${unpushed} commit(s) not on any remote (${onBranch ? 'kept on the local branch' : 'on no branch either'})` : 'all commits pushed',
+        ]
+        // wip: check for hidden edits and save any work before removing; only an approved detached worktree with work is forced.
+        const item = { ...describe, action: 'remove-worktree', deleteBranch: false, wip: onBranch || clean, force: !onBranch && !clean }
+        const why = closed ? `PR #${latest.number} closed without merge` : latest ? `PR #${latest.number} merged, but later commits are not` : 'no PR'
+        if (blockers.length) {
+          flag('f', { ...item, group: 'stale-needs-review', auto: false, title: `delete ${closed ? 'closed-PR' : 'abandoned'} worktree ${tilde(worktree.path)}${onBranch ? ' (branch kept)' : ''}`,
+            detail: [...blockers, why, ...kept].join('; ') })
+        } else {
+          flag('s', { ...item, group: 'stale', auto: true, title: `${tilde(worktree.path)} (${onBranch ? `branch ${worktree.branch} kept` : 'detached, nothing unsaved'}${clean ? '' : `; ${state.dirty.length} uncommitted saved as a WIP commit`})`, detail: [why, ...kept].join('; ') })
+        }
       }
     }
 
@@ -481,13 +498,13 @@ async function auditDocker(opts, add) {
 
 const GROUPS = {
   merged: 'AUTO · delete merged worktrees (+ local branch); one with a session is archived in Commando instead, branch kept',
+  stale: 'AUTO · delete stale unmerged worktrees, branch kept; uncommitted work is saved first as a WIP commit on the branch',
   'ageing-node-modules': 'AUTO · prune node_modules from ageing worktrees',
   housekeeping: 'AUTO · housekeeping',
   'merged-untracked-only': 'merged, only untracked files would be lost → force-delete worktree + branch',
   'merged-modified': 'merged, but tracked files modified → force-delete worktree + branch',
   'merged-in-use': 'merged and clean, but in use → delete worktree + branch, or archive its session',
-  'stale-nothing-to-lose': 'unmerged and stale, clean, every commit on a remote → delete worktree, keep branch',
-  'stale-unsaved-work': 'unmerged and stale with uncommitted or unpushed work → delete worktree, keep branch',
+  'stale-needs-review': 'unmerged and stale, but PR status unknown, in use outside tmux, sharing a session, or detached with work on no branch → delete worktree (WIP commit first when on a branch)',
   'unregistered-folders': 'folders in *worktrees dirs that git does not know → delete folder',
   'dead-sessions': 'tmux sessions whose folders are all gone → archive session (chats stay restorable)',
   'docker-containers': 'stopped Docker containers → docker rm',
@@ -601,6 +618,99 @@ async function archiveWorktreeSessions(item, sessions, ctx) {
   return `archived ${archived.join(', ')}; Commando removed the worktree, branch kept${kept ? ` (${kept})` : ''}`
 }
 
+// Save every change git would add (ignored files excluded) as a commit on the worktree's branch, the
+// way Commando's Archive does. Refuses what a commit can't hold, including edits git hides from status,
+// so it runs even when the worktree looks clean. Returns the new HEAD and change count, or null when
+// there was nothing to save. A detached worktree passes no message: any change there is refused.
+async function saveWorkInProgress(path, message) {
+  const git = (args) => run('git', ['-C', path, ...args], { timeout: 600_000 })
+  const indexEntries = async () => {
+    const listed = await git(['ls-files', '-v', '--stage', '-z'])
+    if (listed.code) throw new Error(`git ls-files failed: ${listed.stderr.trim()}`)
+    return listed.stdout.split('\0').filter(Boolean) // `<tag> <mode> <object> <stage>\t<path>`
+  }
+  // The path is everything after the first tab; it may contain tabs itself.
+  const pathOf = (line) => line.slice(line.indexOf('\t') + 1)
+  const gitlinkIn = (entries) => { const line = entries.find((entry) => entry.split(' ')[1] === '160000'); return line && pathOf(line) }
+  const entries = await indexEntries()
+  // A submodule's work lives in the folder removal deletes; a commit records only its commit id.
+  const submodule = gitlinkIn(entries)
+  if (submodule) throw new Error(`contains a submodule at ${submodule}; worktree kept`)
+  // assume-unchanged (lowercase tag) and skip-worktree (S) hide edits from add. Sparse-checkout files
+  // are S too, but those aren't on disk, so there is nothing to lose.
+  const hidden = entries.find((line) => /^[a-z] /.test(line) || (line.startsWith('S ') && onDisk(join(path, pathOf(line)))))
+  if (hidden) throw new Error(`git is told to ignore edits to ${pathOf(hidden)} (assume-unchanged or skip-worktree); worktree kept`)
+  const status = async () => {
+    const result = await git(['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none'])
+    if (result.code) throw new Error(`git status failed: ${result.stderr.trim()}`)
+    return parseStatus(result.stdout)
+  }
+  if ((await status()).some((file) => /^(DD|AU|UD|UA|DU|AA|UU)$/.test(file.code))) throw new Error('unresolved merge conflicts; worktree kept')
+  // A nested repository's history lives in its own .git, which no commit of the outer repo holds.
+  const nested = await nestedRepository(path)
+  if (nested) throw new Error(`contains another git repository at ${nested}; worktree kept`)
+  const pending = (await status()).length
+  if (!pending) return null
+  if (!message) throw new Error('uncommitted changes on a detached HEAD, which no branch would keep; worktree kept')
+  // Back up the index file itself, so a refusal after `git add` restores it byte for byte, including
+  // skip-worktree (sparse checkout) and intent-to-add entries that a tree would not hold.
+  const indexPath = (await git(['rev-parse', '--path-format=absolute', '--git-path', 'index'])).stdout.trim()
+  const backup = `${indexPath}.disk-cleanup-backup`
+  copyFileSync(indexPath, backup)
+  // No hooks or signing: either could block or prompt with nobody watching.
+  const commit = async (text) => {
+    const committed = await git(['-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--no-verify', '--quiet', '-m', text])
+    if (committed.code) throw new Error(`git commit failed: ${(committed.stderr || committed.stdout).trim().split('\n').pop()}`)
+    return (await git(['rev-parse', '--verify', 'HEAD'])).stdout.trim()
+  }
+  const hasStaged = async () => {
+    const diff = await git(['diff', '--cached', '--quiet', '--no-textconv', '--no-ext-diff'])
+    if (diff.code > 1) throw new Error(`git diff --cached failed: ${diff.stderr.trim()}`)
+    return diff.code === 1
+  }
+  let stagedCommit = null
+  try {
+    // The index can hold work the working tree no longer has (a staged file deleted since, or an earlier
+    // staged version of a file). `git add --all` would overwrite it, so commit the index as it is first.
+    if (await hasStaged()) stagedCommit = await commit(`${message} (staged changes)`)
+    const added = await git(['add', '--all'])
+    if (added.code) throw new Error(`git add failed: ${added.stderr.trim()}`)
+    // Backstop for the walk above: anything staged as a bare commit id would drop its files.
+    const gitlink = gitlinkIn(await indexEntries())
+    if (gitlink) throw new Error(`contains another git repository at ${gitlink}`)
+    if (await hasStaged()) await commit(message)
+  } catch (error) {
+    const made = stagedCommit ? `; WIP commit ${stagedCommit.slice(0, 8)} of the staged changes was made` : ''
+    try { renameSync(backup, indexPath) }
+    catch (restore) { throw new Error(`${error.message}${made}; the index could not be restored (${restore.message}), its backup is ${backup}; worktree kept`) }
+    throw new Error(`${error.message}${made}; worktree kept`)
+  }
+  rmSync(backup, { force: true })
+  const head = (await git(['rev-parse', '--verify', 'HEAD'])).stdout.trim()
+  if ((await status()).length) throw new Error(`WIP commit ${head.slice(0, 8)} made, but some changes could not be committed; worktree kept`)
+  return { head, count: pending }
+}
+
+// The first folder below `root` with its own .git, skipping ignored folders (their contents go with the
+// worktree by design). Inside a tracked folder a repository looks like ordinary files to the outer one.
+async function nestedRepository(root) {
+  const listed = await run('git', ['-C', root, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'], { timeout: 600_000 })
+  if (listed.code) throw new Error(`git ls-files failed: ${listed.stderr.trim()}`)
+  const ignored = new Set(listed.stdout.split('\0').filter((entry) => entry.endsWith('/')).map((entry) => join(root, entry.slice(0, -1))))
+  const walk = (dir) => {
+    const entries = readdirSync(dir, { withFileTypes: true })
+    if (dir !== root && entries.some((entry) => entry.name === '.git')) return dir.slice(root.length + 1)
+    for (const entry of entries) {
+      const child = join(dir, entry.name)
+      if (!entry.isDirectory() || entry.name === '.git' || ignored.has(child)) continue
+      const found = walk(child)
+      if (found) return found
+    }
+    return null
+  }
+  return walk(root)
+}
+
 const actions = {
   async 'git-worktree-prune'(item, ctx) {
     if (ctx.dryRun) return 'would prune'
@@ -617,17 +727,24 @@ const actions = {
     if (nested.length) throw new Error(`contains nested worktree ${tilde(nested[0])}`)
     const state = await worktreeState(item.path, ctx.live)
     if (state.lastActivity > item.lastActivity + 60_000) throw new Error(`new activity since audit (${ago(state.lastActivity)} ago)`)
-    if (!item.force && state.dirty?.length !== 0) throw new Error('worktree is no longer clean')
+    if (state.dirty === null) throw new Error('git status failed')
+    // A worktree that was clean at audit time must still be clean; wip items save their work first instead.
+    if (!item.force && !item.wip && state.dirty.length) throw new Error('worktree is no longer clean')
     if (item.auto && state.external.length) throw new Error(`process now running outside tmux: ${state.external[0].args}`)
     const shared = state.sessions.filter((session) => !session.exclusive)
     if (shared.length) throw new Error(`session(s) ${shared.map((session) => `"${session.name}"`).join(', ')} also use other folders; archive them from Commando first`)
     if (state.sessions.length) return archiveWorktreeSessions(item, state.sessions, ctx)
-    if (ctx.dryRun) return `would remove${item.deleteBranch ? ` and delete branch ${item.branch}` : ''}`
-    const removed = await run('git', ['-C', item.repo, 'worktree', 'remove', ...(item.force ? ['--force'] : []), item.path], { timeout: 600_000 })
-    if (removed.code) throw new Error(removed.stderr.trim())
-    ctx.removedDeps = true
-    ctx.restore.push(`git -C ${item.repo} worktree add ${item.path} ${item.head}${item.branch ? `   # branch ${item.branch}` : ''}`)
+    if (ctx.dryRun) return `would ${item.wip ? (item.branch ? `save any uncommitted work as a WIP commit on ${item.branch}, then ` : 'check it has no hidden edits, then ') : ''}remove${item.deleteBranch ? ` and delete branch ${item.branch}` : ''}`
     let note = 'removed'
+    const saved = item.wip ? await saveWorkInProgress(item.path, item.branch && `wip: saved by disk-cleanup before removing worktree ${basename(item.path)}`) : null
+    if (saved) note = `saved ${saved.count} uncommitted change(s) as WIP commit ${saved.head.slice(0, 8)} on ${item.branch}, removed`
+    // After a WIP commit the worktree holds only ignored files, which a plain remove deletes.
+    const removed = await run('git', ['-C', item.repo, 'worktree', 'remove', ...(item.force ? ['--force'] : []), item.path], { timeout: 600_000 })
+    if (removed.code) throw new Error(`${saved ? `WIP commit ${saved.head.slice(0, 8)} made, but ` : ''}${removed.stderr.trim()}`)
+    ctx.removedDeps = true
+    ctx.restore.push(item.branch && !item.deleteBranch
+      ? `git -C ${item.repo} worktree add ${item.path} ${item.branch}`
+      : `git -C ${item.repo} worktree add ${item.path} ${item.head}${item.branch ? `   # branch ${item.branch}` : ''}`)
     if (item.deleteBranch) {
       const deleted = await run('git', ['-C', item.repo, 'branch', '-D', item.branch])
       if (deleted.code === 0) { note += `, branch ${item.branch} deleted`; ctx.restore.push(`git -C ${item.repo} branch ${item.branch} ${item.head}`) }
