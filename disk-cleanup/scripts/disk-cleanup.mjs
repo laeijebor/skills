@@ -66,6 +66,8 @@ function human(kb) {
 }
 
 function mtime(path) { try { return lstatSync(path).mtimeMs } catch { return 0 } }
+// Like existsSync, but a symlink counts even when its target is missing.
+function onDisk(path) { try { lstatSync(path); return true } catch { return false } }
 
 async function diskFreeKB() {
   const { stdout } = await run('df', ['-k', HOME])
@@ -634,7 +636,7 @@ async function saveWorkInProgress(path, message) {
   if (submodule) throw new Error(`contains a submodule at ${submodule}; worktree kept`)
   // assume-unchanged (lowercase tag) and skip-worktree (S) hide edits from add. Sparse-checkout files
   // are S too, but those aren't on disk, so there is nothing to lose.
-  const hidden = entries.find((line) => /^[a-z] /.test(line) || (line.startsWith('S ') && existsSync(join(path, line.split('\t')[1]))))
+  const hidden = entries.find((line) => /^[a-z] /.test(line) || (line.startsWith('S ') && onDisk(join(path, line.split('\t')[1]))))
   if (hidden) throw new Error(`git is told to ignore edits to ${hidden.split('\t')[1]} (assume-unchanged or skip-worktree); worktree kept`)
   const status = async () => {
     const result = await git(['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none'])
