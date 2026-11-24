@@ -397,7 +397,7 @@ async function audit(opts) {
           flag('f', { ...item, group: 'stale-needs-review', auto: false, title: `delete ${closed ? 'closed-PR' : 'abandoned'} worktree ${tilde(worktree.path)}${onBranch ? ' (branch kept)' : ''}`,
             detail: [...blockers, why, ...kept].join('; ') })
         } else {
-          flag('s', { ...item, group: 'stale', auto: true, title: `${tilde(worktree.path)} (branch ${worktree.branch} kept${item.wip ? `; ${state.dirty.length} uncommitted saved as a WIP commit` : ''})`, detail: [why, ...kept].join('; ') })
+          flag('s', { ...item, group: 'stale', auto: true, title: `${tilde(worktree.path)} (${onBranch ? `branch ${worktree.branch} kept` : 'detached, nothing unsaved'}${item.wip ? `; ${state.dirty.length} uncommitted saved as a WIP commit` : ''})`, detail: [why, ...kept].join('; ') })
         }
       }
     }
@@ -639,19 +639,47 @@ async function commitWorkInProgress(path, message) {
     return parseStatus(result.stdout)
   }
   if ((await status()).some((file) => /^(DD|AU|UD|UA|DU|AA|UU)$/.test(file.code))) throw new Error('unresolved merge conflicts; worktree kept')
-  const added = await git(['add', '--all'])
-  if (added.code) throw new Error(`git add failed: ${added.stderr.trim()}`)
-  // An untracked nested repository is staged as a bare commit id, which would drop its files.
-  const nestedRepo = gitlinkIn(await indexEntries())
-  if (nestedRepo) {
-    await git(['reset', '--quiet'])
-    throw new Error(`contains another git repository at ${nestedRepo}; worktree kept`)
+  // A nested repository's history lives in its own .git, which no commit of the outer repo holds.
+  const nested = await nestedRepository(path)
+  if (nested) throw new Error(`contains another git repository at ${nested}; worktree kept`)
+  // Remember the index exactly, so a refusal after `git add` leaves the staged state as it was.
+  const savedIndex = await git(['write-tree'])
+  if (savedIndex.code) throw new Error(`git write-tree failed: ${savedIndex.stderr.trim()}`)
+  const refuse = async (reason) => {
+    await git(['read-tree', savedIndex.stdout.trim()])
+    throw new Error(`${reason}; worktree kept`)
   }
+  const added = await git(['add', '--all'])
+  if (added.code) await refuse(`git add failed: ${added.stderr.trim()}`)
+  // Backstop for the walk above: anything staged as a bare commit id would drop its files.
+  const gitlink = gitlinkIn(await indexEntries())
+  if (gitlink) await refuse(`contains another git repository at ${gitlink}`)
   // No hooks or signing: either could block or prompt with nobody watching.
   const committed = await git(['-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--no-verify', '--quiet', '-m', message])
-  if (committed.code) throw new Error(`git commit failed: ${(committed.stderr || committed.stdout).trim()}; worktree kept`)
-  if ((await status()).length) throw new Error('some changes could not be committed; worktree kept')
-  return (await git(['rev-parse', '--verify', 'HEAD'])).stdout.trim()
+  if (committed.code) await refuse(`git commit failed: ${(committed.stderr || committed.stdout).trim().split('\n').pop()}`)
+  const head = (await git(['rev-parse', '--verify', 'HEAD'])).stdout.trim()
+  if ((await status()).length) throw new Error(`WIP commit ${head.slice(0, 8)} made, but some changes could not be committed; worktree kept`)
+  return head
+}
+
+// The first folder below `root` with its own .git, skipping ignored folders (their contents go with the
+// worktree by design). Inside a tracked folder a repository looks like ordinary files to the outer one.
+async function nestedRepository(root) {
+  const listed = await run('git', ['-C', root, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'], { timeout: 600_000 })
+  if (listed.code) throw new Error(`git ls-files failed: ${listed.stderr.trim()}`)
+  const ignored = new Set(listed.stdout.split('\0').filter((entry) => entry.endsWith('/')).map((entry) => join(root, entry.slice(0, -1))))
+  const walk = (dir) => {
+    const entries = readdirSync(dir, { withFileTypes: true })
+    if (dir !== root && entries.some((entry) => entry.name === '.git')) return dir.slice(root.length + 1)
+    for (const entry of entries) {
+      const child = join(dir, entry.name)
+      if (!entry.isDirectory() || entry.name === '.git' || ignored.has(child)) continue
+      const found = walk(child)
+      if (found) return found
+    }
+    return null
+  }
+  return walk(root)
 }
 
 const actions = {
