@@ -664,7 +664,7 @@ async function saveWorkInProgress(path, message) {
     return (await git(['rev-parse', '--verify', 'HEAD'])).stdout.trim()
   }
   const hasStaged = async () => {
-    const diff = await git(['diff', '--cached', '--quiet'])
+    const diff = await git(['diff', '--cached', '--quiet', '--no-textconv', '--no-ext-diff'])
     if (diff.code > 1) throw new Error(`git diff --cached failed: ${diff.stderr.trim()}`)
     return diff.code === 1
   }
