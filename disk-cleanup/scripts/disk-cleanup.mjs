@@ -9,7 +9,7 @@
 // audit writes a plan to ~/.local/state/disk-cleanup/ and prints a report. apply re-checks every
 // selected item against live state before acting and writes a log with what it removed.
 import { execFile } from 'node:child_process'
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 
@@ -642,21 +642,26 @@ async function commitWorkInProgress(path, message) {
   // A nested repository's history lives in its own .git, which no commit of the outer repo holds.
   const nested = await nestedRepository(path)
   if (nested) throw new Error(`contains another git repository at ${nested}; worktree kept`)
-  // Remember the index exactly, so a refusal after `git add` leaves the staged state as it was.
-  const savedIndex = await git(['write-tree'])
-  if (savedIndex.code) throw new Error(`git write-tree failed: ${savedIndex.stderr.trim()}`)
-  const refuse = async (reason) => {
-    await git(['read-tree', savedIndex.stdout.trim()])
-    throw new Error(`${reason}; worktree kept`)
+  // Back up the index file itself, so a refusal after `git add` restores it byte for byte, including
+  // skip-worktree (sparse checkout) and intent-to-add entries that a tree would not hold.
+  const indexPath = (await git(['rev-parse', '--path-format=absolute', '--git-path', 'index'])).stdout.trim()
+  const backup = `${indexPath}.disk-cleanup-backup`
+  copyFileSync(indexPath, backup)
+  try {
+    const added = await git(['add', '--all'])
+    if (added.code) throw new Error(`git add failed: ${added.stderr.trim()}`)
+    // Backstop for the walk above: anything staged as a bare commit id would drop its files.
+    const gitlink = gitlinkIn(await indexEntries())
+    if (gitlink) throw new Error(`contains another git repository at ${gitlink}`)
+    // No hooks or signing: either could block or prompt with nobody watching.
+    const committed = await git(['-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--no-verify', '--quiet', '-m', message])
+    if (committed.code) throw new Error(`git commit failed: ${(committed.stderr || committed.stdout).trim().split('\n').pop()}`)
+  } catch (error) {
+    try { renameSync(backup, indexPath) }
+    catch (restore) { throw new Error(`${error.message}; the index could not be restored (${restore.message}), its backup is ${backup}; worktree kept`) }
+    throw new Error(`${error.message}; worktree kept`)
   }
-  const added = await git(['add', '--all'])
-  if (added.code) await refuse(`git add failed: ${added.stderr.trim()}`)
-  // Backstop for the walk above: anything staged as a bare commit id would drop its files.
-  const gitlink = gitlinkIn(await indexEntries())
-  if (gitlink) await refuse(`contains another git repository at ${gitlink}`)
-  // No hooks or signing: either could block or prompt with nobody watching.
-  const committed = await git(['-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--no-verify', '--quiet', '-m', message])
-  if (committed.code) await refuse(`git commit failed: ${(committed.stderr || committed.stdout).trim().split('\n').pop()}`)
+  rmSync(backup, { force: true })
   const head = (await git(['rev-parse', '--verify', 'HEAD'])).stdout.trim()
   if ((await status()).length) throw new Error(`WIP commit ${head.slice(0, 8)} made, but some changes could not be committed; worktree kept`)
   return head
