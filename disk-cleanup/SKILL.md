@@ -34,6 +34,7 @@ Use `apply … --dry-run` to see exactly what would happen after re-validation w
 ## Guardrails
 
 - Act only through `apply`, so every item is re-checked. Don't hand-delete worktrees or kill sessions on the script's behalf.
+- **Every stale worktree goes through these checks, even one that looks clean,** since edits to assume-unchanged or skip-worktree files don't show in `git status`.
 - **A WIP commit is refused, and the worktree kept, when the commit can't hold everything:** a submodule or nested repository, files marked assume-unchanged or skip-worktree, unresolved merge conflicts, or anything still uncommitted afterwards. Ignored files (node_modules, .env, build output) are deleted with the worktree, as before. The log lists `git worktree add <path> <branch>` to bring one back.
 - Never prune Docker volumes or stopped containers without approval; they can hold database state.
 - **Sessions are never killed; at most they are archived.** For a worktree with a tmux session, `apply` asks Commando to archive the session, as its Archive button does: panes and agent chats are kept, uncommitted work is committed as a WIP commit, Commando removes the worktree, and the branch is kept so Restore checks it out again. The log lists these as `Commando → Archived → "<name>" → Restore`.

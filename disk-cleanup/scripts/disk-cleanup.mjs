@@ -391,13 +391,14 @@ async function audit(opts) {
           clean ? 'clean' : onBranch ? `${state.dirty.length} uncommitted change(s) saved as a WIP commit` : `${state.dirty.length} uncommitted change(s) would be lost`,
           unpushed === null ? 'could not count unpushed commits' : unpushed ? `${unpushed} commit(s) not on any remote (${onBranch ? 'kept on the local branch' : 'on no branch either'})` : 'all commits pushed',
         ]
-        const item = { ...describe, action: 'remove-worktree', deleteBranch: false, wip: onBranch && !clean, force: !onBranch && !clean }
+        // wip: check for hidden edits and save any work before removing; only an approved detached worktree with work is forced.
+        const item = { ...describe, action: 'remove-worktree', deleteBranch: false, wip: onBranch || clean, force: !onBranch && !clean }
         const why = closed ? `PR #${latest.number} closed without merge` : latest ? `PR #${latest.number} merged, but later commits are not` : 'no PR'
         if (blockers.length) {
           flag('f', { ...item, group: 'stale-needs-review', auto: false, title: `delete ${closed ? 'closed-PR' : 'abandoned'} worktree ${tilde(worktree.path)}${onBranch ? ' (branch kept)' : ''}`,
             detail: [...blockers, why, ...kept].join('; ') })
         } else {
-          flag('s', { ...item, group: 'stale', auto: true, title: `${tilde(worktree.path)} (${onBranch ? `branch ${worktree.branch} kept` : 'detached, nothing unsaved'}${item.wip ? `; ${state.dirty.length} uncommitted saved as a WIP commit` : ''})`, detail: [why, ...kept].join('; ') })
+          flag('s', { ...item, group: 'stale', auto: true, title: `${tilde(worktree.path)} (${onBranch ? `branch ${worktree.branch} kept` : 'detached, nothing unsaved'}${clean ? '' : `; ${state.dirty.length} uncommitted saved as a WIP commit`})`, detail: [why, ...kept].join('; ') })
         }
       }
     }
@@ -616,8 +617,10 @@ async function archiveWorktreeSessions(item, sessions, ctx) {
 }
 
 // Save every change git would add (ignored files excluded) as a commit on the worktree's branch, the
-// way Commando's Archive does, and return the new HEAD. Refuses what a commit can't hold.
-async function commitWorkInProgress(path, message) {
+// way Commando's Archive does. Refuses what a commit can't hold, including edits git hides from status,
+// so it runs even when the worktree looks clean. Returns the new HEAD and change count, or null when
+// there was nothing to save. A detached worktree passes no message: any change there is refused.
+async function saveWorkInProgress(path, message) {
   const git = (args) => run('git', ['-C', path, ...args], { timeout: 600_000 })
   const indexEntries = async () => {
     const listed = await git(['ls-files', '-v', '--stage', '-z'])
@@ -642,6 +645,9 @@ async function commitWorkInProgress(path, message) {
   // A nested repository's history lives in its own .git, which no commit of the outer repo holds.
   const nested = await nestedRepository(path)
   if (nested) throw new Error(`contains another git repository at ${nested}; worktree kept`)
+  const pending = (await status()).length
+  if (!pending) return null
+  if (!message) throw new Error('uncommitted changes on a detached HEAD, which no branch would keep; worktree kept')
   // Back up the index file itself, so a refusal after `git add` restores it byte for byte, including
   // skip-worktree (sparse checkout) and intent-to-add entries that a tree would not hold.
   const indexPath = (await git(['rev-parse', '--path-format=absolute', '--git-path', 'index'])).stdout.trim()
@@ -664,7 +670,7 @@ async function commitWorkInProgress(path, message) {
   rmSync(backup, { force: true })
   const head = (await git(['rev-parse', '--verify', 'HEAD'])).stdout.trim()
   if ((await status()).length) throw new Error(`WIP commit ${head.slice(0, 8)} made, but some changes could not be committed; worktree kept`)
-  return head
+  return { head, count: pending }
 }
 
 // The first folder below `root` with its own .git, skipping ignored folders (their contents go with the
@@ -704,22 +710,19 @@ const actions = {
     const state = await worktreeState(item.path, ctx.live)
     if (state.lastActivity > item.lastActivity + 60_000) throw new Error(`new activity since audit (${ago(state.lastActivity)} ago)`)
     if (state.dirty === null) throw new Error('git status failed')
-    // A worktree that was clean at audit time must still be clean; wip items (always on a branch, checked above) get a WIP commit.
+    // A worktree that was clean at audit time must still be clean; wip items save their work first instead.
     if (!item.force && !item.wip && state.dirty.length) throw new Error('worktree is no longer clean')
     if (item.auto && state.external.length) throw new Error(`process now running outside tmux: ${state.external[0].args}`)
     const shared = state.sessions.filter((session) => !session.exclusive)
     if (shared.length) throw new Error(`session(s) ${shared.map((session) => `"${session.name}"`).join(', ')} also use other folders; archive them from Commando first`)
     if (state.sessions.length) return archiveWorktreeSessions(item, state.sessions, ctx)
-    const wipCount = item.wip ? state.dirty.length : 0
-    if (ctx.dryRun) return `would ${wipCount ? `save ${wipCount} uncommitted change(s) as a WIP commit on ${item.branch}, then ` : ''}remove${item.deleteBranch ? ` and delete branch ${item.branch}` : ''}`
+    if (ctx.dryRun) return `would ${item.wip ? (item.branch ? `save any uncommitted work as a WIP commit on ${item.branch}, then ` : 'check it has no hidden edits, then ') : ''}remove${item.deleteBranch ? ` and delete branch ${item.branch}` : ''}`
     let note = 'removed'
-    if (wipCount) {
-      const head = await commitWorkInProgress(item.path, `wip: saved by disk-cleanup before removing worktree ${basename(item.path)}`)
-      note = `saved ${wipCount} uncommitted change(s) as WIP commit ${head.slice(0, 8)} on ${item.branch}, removed`
-    }
+    const saved = item.wip ? await saveWorkInProgress(item.path, item.branch && `wip: saved by disk-cleanup before removing worktree ${basename(item.path)}`) : null
+    if (saved) note = `saved ${saved.count} uncommitted change(s) as WIP commit ${saved.head.slice(0, 8)} on ${item.branch}, removed`
     // After a WIP commit the worktree holds only ignored files, which a plain remove deletes.
     const removed = await run('git', ['-C', item.repo, 'worktree', 'remove', ...(item.force ? ['--force'] : []), item.path], { timeout: 600_000 })
-    if (removed.code) throw new Error(`${wipCount ? 'WIP commit made, but ' : ''}${removed.stderr.trim()}`)
+    if (removed.code) throw new Error(`${saved ? `WIP commit ${saved.head.slice(0, 8)} made, but ` : ''}${removed.stderr.trim()}`)
     ctx.removedDeps = true
     ctx.restore.push(item.branch && !item.deleteBranch
       ? `git -C ${item.repo} worktree add ${item.path} ${item.branch}`
