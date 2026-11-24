@@ -657,19 +657,33 @@ async function saveWorkInProgress(path, message) {
   const indexPath = (await git(['rev-parse', '--path-format=absolute', '--git-path', 'index'])).stdout.trim()
   const backup = `${indexPath}.disk-cleanup-backup`
   copyFileSync(indexPath, backup)
+  // No hooks or signing: either could block or prompt with nobody watching.
+  const commit = async (text) => {
+    const committed = await git(['-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--no-verify', '--quiet', '-m', text])
+    if (committed.code) throw new Error(`git commit failed: ${(committed.stderr || committed.stdout).trim().split('\n').pop()}`)
+    return (await git(['rev-parse', '--verify', 'HEAD'])).stdout.trim()
+  }
+  const hasStaged = async () => {
+    const diff = await git(['diff', '--cached', '--quiet'])
+    if (diff.code > 1) throw new Error(`git diff --cached failed: ${diff.stderr.trim()}`)
+    return diff.code === 1
+  }
+  let stagedCommit = null
   try {
+    // The index can hold work the working tree no longer has (a staged file deleted since, or an earlier
+    // staged version of a file). `git add --all` would overwrite it, so commit the index as it is first.
+    if (await hasStaged()) stagedCommit = await commit(`${message} (staged changes)`)
     const added = await git(['add', '--all'])
     if (added.code) throw new Error(`git add failed: ${added.stderr.trim()}`)
     // Backstop for the walk above: anything staged as a bare commit id would drop its files.
     const gitlink = gitlinkIn(await indexEntries())
     if (gitlink) throw new Error(`contains another git repository at ${gitlink}`)
-    // No hooks or signing: either could block or prompt with nobody watching.
-    const committed = await git(['-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--no-verify', '--quiet', '-m', message])
-    if (committed.code) throw new Error(`git commit failed: ${(committed.stderr || committed.stdout).trim().split('\n').pop()}`)
+    if (await hasStaged()) await commit(message)
   } catch (error) {
+    const made = stagedCommit ? `; WIP commit ${stagedCommit.slice(0, 8)} of the staged changes was made` : ''
     try { renameSync(backup, indexPath) }
-    catch (restore) { throw new Error(`${error.message}; the index could not be restored (${restore.message}), its backup is ${backup}; worktree kept`) }
-    throw new Error(`${error.message}; worktree kept`)
+    catch (restore) { throw new Error(`${error.message}${made}; the index could not be restored (${restore.message}), its backup is ${backup}; worktree kept`) }
+    throw new Error(`${error.message}${made}; worktree kept`)
   }
   rmSync(backup, { force: true })
   const head = (await git(['rev-parse', '--verify', 'HEAD'])).stdout.trim()
